@@ -1,0 +1,19 @@
+[package]
+name = "imglean"
+version = "0.1.0"
+edition = "2024"
+description = "Run image optimizers and select the smallest verified candidate per input"
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["image", "optimization", "compression", "cli"]
+categories = ["command-line-utilities", "multimedia::images"]
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+[dependencies]

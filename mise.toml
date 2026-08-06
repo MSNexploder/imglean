@@ -1,0 +1,30 @@
+[tools]
+rust = { version = "latest", components = ["clippy", "rustfmt"] }
+
+[tasks.format]
+description = "Format Rust sources"
+run = "cargo fmt --all"
+
+[tasks."format:check"]
+description = "Check Rust formatting"
+run = "cargo fmt --all --check"
+
+[tasks.lint]
+description = "Lint every target and feature"
+run = "cargo clippy --locked --all-targets --all-features -- -D warnings"
+
+[tasks.test]
+description = "Run the complete test suite"
+run = "cargo test --locked --all-features"
+
+[tasks.check]
+description = "Run all required development checks"
+run = [
+  { task = "format:check" },
+  { task = "lint" },
+  { task = "test" },
+]
+
+[tasks.dev]
+description = "Run the development CLI"
+run = "cargo run --locked --"
