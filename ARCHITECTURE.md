@@ -1,7 +1,8 @@
 # ImgLean Architecture
 
 > [!IMPORTANT]
-> This is an approved planned version 0.1 design commitment, not implemented behavior. It may change when reviewed feasibility or implementation evidence requires it.
+> This document describes the implemented version 0.1 component boundaries.
+> Target-specific release qualification is tracked separately.
 
 ## Role of this document
 
@@ -29,7 +30,7 @@ The controller owns:
 - winner selection and filesystem commits; and
 - per-input diagnostics and final process status.
 
-Controller-wide limits bound the complete invocation, not only individual workers. They cover input count, captured bytes, worker concurrency, temporary storage, diagnostics, and elapsed time. Exact values are versioned with their implementations and tests once measured.
+Controller-wide limits bound the complete invocation, not only individual workers. They cover input count, captured bytes, worker concurrency, temporary storage, diagnostics, and elapsed time. Exact values and enforcement classifications are versioned in [the limits contract](docs/contracts/LIMITS.md) and tested with their implementations.
 
 The worker protocol identifies only the private strategy input and candidate destination needed by a strategy; source and commit paths are not protocol inputs. This reduces accidental misuse but does not deny access: workers run with the user's authority, and process separation alone does not prevent same-user access to other system resources. The mechanism used to capture source content and derive private strategy inputs belongs in the input-and-batch contract rather than this architecture.
 
@@ -79,7 +80,7 @@ At the start of a release build, the moving stable Rust channel is resolved to o
 Version 0.1 behavior is further defined by focused contracts:
 
 - **[Input and batch](docs/contracts/INPUT_AND_BATCH.md):** path representation and mapping, structural preflight, portable source capture, invocation-wide limits, C2PA sidecar checks, diagnostics, and CLI edge cases.
-- **Provider execution:** worker protocol, safe candidate acquisition, portable byte and elapsed-time limits, diagnostic sanitization, result handling, termination, and cleanup. This contract is finalized before provider code is enabled.
+- **[Provider execution](docs/contracts/PROVIDER_EXECUTION.md):** worker protocol, safe candidate acquisition, portable byte and elapsed-time limits, diagnostic sanitization, result handling, termination, and cleanup.
 - **[PNG](docs/contracts/PNG.md):** accepted encoding classes, equivalence, metadata, validation limits, and OxiPNG option boundaries.
 - **[Output](docs/contracts/OUTPUT.md):** path handling, required hard-link behavior, temporary paths and cleanup, non-replacing publication, new-file metadata, and filesystem failures.
 

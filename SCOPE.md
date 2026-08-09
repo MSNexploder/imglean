@@ -1,7 +1,8 @@
 # ImgLean Scope
 
 > [!IMPORTANT]
-> ImgLean is currently project scaffolding. This document defines planned product behavior; it does not describe an implemented release.
+> The version 0.1 workflow is implemented in source. Target-specific release
+> artifacts remain unpublished and unqualified until their native gates pass.
 
 ## Product definition
 
@@ -36,9 +37,9 @@ Given an accepted candidate set, ImgLean selects the winner deterministically. E
 
 These are product outcomes. Architecture, format, input, output, provider, reporting, filesystem, testing, and release mechanisms belong in their owning documents and implementations.
 
-## Planned version 0.1
+## Version 0.1
 
-Version 0.1 is planned as a supported, releasable CLI for a deliberately narrow slice of the core optimization race:
+Version 0.1 is a supported, releasable CLI for a deliberately narrow slice of the core optimization race:
 
 - 64-bit macOS, Linux, and Windows release targets using common filesystem operations;
 - a limited, non-animated PNG subset under strict lossless equivalence;
@@ -70,7 +71,12 @@ The milestone is complete when:
 
 ## Document ownership
 
-[ARCHITECTURE.md](ARCHITECTURE.md) and the focused [input and batch](docs/contracts/INPUT_AND_BATCH.md), [PNG](docs/contracts/PNG.md), and [output](docs/contracts/OUTPUT.md) contracts are approved planned version 0.1 design commitments, not descriptions of implemented behavior. They may change when reviewed feasibility or implementation evidence requires it. Provider and release contracts are added beside their implementations when that work begins.
+[ARCHITECTURE.md](ARCHITECTURE.md) owns stable component boundaries. The focused
+[input and batch](docs/contracts/INPUT_AND_BATCH.md),
+[PNG](docs/contracts/PNG.md), [provider](docs/contracts/PROVIDER_EXECUTION.md),
+[output](docs/contracts/OUTPUT.md), and [limits](docs/contracts/LIMITS.md)
+contracts own detailed implemented behavior. [docs/RELEASE.md](docs/RELEASE.md)
+owns target qualification and artifact contents.
 
 ## Non-goals
 

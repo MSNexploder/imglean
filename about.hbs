@@ -1,0 +1,19 @@
+# Third-party notices
+
+This distribution includes the following third-party software. ImgLean itself
+is licensed under Apache-2.0; see `LICENSE.md`.
+
+{{#each licenses}}
+## {{name}}
+
+Used by:
+
+{{#each used_by}}
+- {{crate.name}} {{crate.version}}
+{{/each}}
+
+```text
+{{{text}}}
+```
+
+{{/each}}

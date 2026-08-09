@@ -1,0 +1,9 @@
+accepted = ["0BSD", "Apache-2.0", "MIT", "Zlib"]
+targets = [
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+ignore-build-dependencies = false
+ignore-dev-dependencies = true
+ignore-transitive-dependencies = false

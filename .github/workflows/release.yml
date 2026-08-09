@@ -1,0 +1,83 @@
+name: Release candidate artifacts
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compliance:
+    name: Compliance records
+    runs-on: ubuntu-24.04
+    outputs:
+      rust_version: ${{ steps.toolchain.outputs.rust_version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
+      - name: Resolve release Rust toolchain
+        id: toolchain
+        shell: bash
+        run: echo "rust_version=$(rustc -V | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - name: Audit dependencies
+        run: mise run audit
+      - name: Generate notices and SBOM
+        shell: bash
+        run: |
+          mise run notices
+          git diff --exit-code -- THIRD_PARTY_NOTICES.md
+          mise run sbom
+          mise exec -- python -m json.tool target/imglean.spdx.json >/dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compliance-records
+          path: |
+            THIRD_PARTY_NOTICES.md
+            target/imglean.spdx.json
+
+  package:
+    name: Package (${{ matrix.target }})
+    needs: compliance
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            binary: target/x86_64-unknown-linux-gnu/release/imglean
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            binary: target/x86_64-apple-darwin/release/imglean
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            binary: target/x86_64-pc-windows-msvc/release/imglean.exe
+    runs-on: ${{ matrix.os }}
+    env:
+      MISE_RUST_VERSION: ${{ needs.compliance.outputs.rust_version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
+        with:
+          install: false
+      - name: Install build tools
+        run: mise install rust python
+      - name: Run native qualification gate
+        run: mise run check
+      - name: Build target executable
+        run: cargo build --locked --release --target ${{ matrix.target }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: compliance-records
+          path: target/compliance
+      - name: Package release record
+        run: >-
+          mise exec -- python tools/package_release.py
+          --target ${{ matrix.target }}
+          --binary ${{ matrix.binary }}
+          --sbom target/compliance/imglean.spdx.json
+          --notices target/compliance/THIRD_PARTY_NOTICES.md
+          --output dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: imglean-${{ matrix.target }}
+          path: dist/*

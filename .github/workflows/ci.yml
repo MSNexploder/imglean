@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Native gate (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
+        with:
+          install: false
+      - name: Install Rust
+        run: mise install rust
+      - name: Run canonical gate
+        run: mise run check
+      - name: Build release executable
+        run: cargo build --locked --release --target ${{ matrix.target }}
+
+  compliance:
+    name: Dependency and release records
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
+      - name: Audit dependencies
+        run: mise run audit
+      - name: Verify generated notices
+        shell: bash
+        run: |
+          mise run notices
+          git diff --exit-code -- THIRD_PARTY_NOTICES.md
+      - name: Generate and validate SPDX SBOM
+        shell: bash
+        run: |
+          mise run sbom
+          mise exec -- python -m json.tool target/imglean.spdx.json >/dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compliance-records
+          path: |
+            THIRD_PARTY_NOTICES.md
+            target/imglean.spdx.json

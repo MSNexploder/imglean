@@ -1,5 +1,9 @@
 [tools]
+python = "3.13"
 rust = { version = "latest", components = ["clippy", "rustfmt"] }
+"cargo:cargo-about" = { version = "0.9.1", features = "cli" }
+"cargo:cargo-deny" = "0.20.2"
+"cargo:cargo-sbom" = "0.10.0"
 
 [tasks.format]
 description = "Format Rust sources"
@@ -28,3 +32,16 @@ run = [
 [tasks.dev]
 description = "Run the development CLI"
 run = "cargo run --locked --"
+
+[tasks.audit]
+description = "Audit dependency advisories, licenses, duplicates, and sources"
+# cargo-deny's --locked protects Cargo.lock; only --offline disables advisory fetches.
+run = "cargo deny --locked check advisories bans licenses sources"
+
+[tasks.notices]
+description = "Generate bundled third-party notices"
+run = "python tools/generate_notices.py"
+
+[tasks.sbom]
+description = "Generate an SPDX 2.3 software bill of materials"
+run = "cargo sbom --output-format spdx_json_2_3 > target/imglean.spdx.json"

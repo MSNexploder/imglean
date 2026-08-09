@@ -1,7 +1,7 @@
 # Version 0.1 PNG Contract
 
 > [!IMPORTANT]
-> This is an approved planned version 0.1 design commitment, not implemented behavior. It may change when reviewed feasibility or implementation evidence requires it.
+> This is the implemented version 0.1 PNG contract.
 
 ## Boundary
 
@@ -46,9 +46,12 @@ Unused low-order padding bits at the end of packed indexed-color scanlines are n
 
 ## Bounds
 
-Source and candidate validation must bound encoded bytes, dimensions, total pixels, reconstructed sample storage, chunk size and count, total ancillary bytes, allocations, image-data decompression work, and validation time.
+Source and candidate validation bounds encoded bytes, dimensions, total pixels,
+reconstructed sample storage, chunk size and count, total ancillary bytes,
+allocations, image-data decompression work, and validation time.
 
-Exact values are chosen from implementation measurements, version-controlled beside the validator, and covered by boundary tests before release.
+Exact values and enforcement classifications are version-controlled in
+[LIMITS.md](LIMITS.md) and `src/limits.rs` and covered by boundary tests.
 
 ## OxiPNG boundary
 

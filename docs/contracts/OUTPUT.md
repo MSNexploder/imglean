@@ -1,7 +1,7 @@
 # Version 0.1 Output Contract
 
 > [!IMPORTANT]
-> This is an approved planned version 0.1 design commitment, not implemented behavior. It may change when reviewed feasibility or implementation evidence requires it.
+> This is the implemented version 0.1 output contract.
 
 ## Boundary
 

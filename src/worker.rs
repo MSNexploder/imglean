@@ -1,0 +1,458 @@
+use std::ffi::{OsStr, OsString};
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Read, Write};
+use std::path::Path;
+use std::process::{Command, Stdio};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
+
+use oxipng::{Deflater, FilterStrategy, Options, StripChunks, indexset};
+
+use crate::artifacts::Artifacts;
+use crate::diagnostics::escape_worker_text;
+use crate::limits::{
+    LIMITS_VERSION, MAX_CANDIDATE_BYTES, MAX_DIAGNOSTIC_BYTES, MAX_RECONSTRUCTED_BYTES,
+    MAX_SOURCE_BYTES, MAX_TEMPORARY_BYTES, PROVIDER_TIMEOUT, WORKER_TIMEOUT,
+};
+use crate::png::validate_source;
+
+const WORKER_ROLE: &str = "--imglean-internal-worker-v1";
+const OXIPNG_STRATEGY: &str = "oxipng-v1";
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum StrategyResult {
+    Candidate(Vec<u8>),
+    Warning(String),
+    Failure(&'static str),
+}
+
+pub fn try_run(arguments: &[OsString]) -> Option<i32> {
+    if arguments
+        .get(1)
+        .is_none_or(|argument| argument != OsStr::new(WORKER_ROLE))
+    {
+        return None;
+    }
+    Some(run_private(arguments))
+}
+
+pub fn run_strategy(artifacts: &mut Artifacts, source: &[u8]) -> StrategyResult {
+    let maximum_live_bytes = (source.len() as u64)
+        .checked_mul(2)
+        .and_then(|bytes| bytes.checked_add(MAX_CANDIDATE_BYTES));
+    if maximum_live_bytes.is_none_or(|bytes| bytes > MAX_TEMPORARY_BYTES) {
+        return StrategyResult::Warning(
+            "provider artifacts exceed the temporary-byte limit".to_owned(),
+        );
+    }
+    let (private_input, mut input_file) = match artifacts.create("provider-input") {
+        Ok(value) => value,
+        Err(_) => {
+            return StrategyResult::Warning("cannot create the private provider input".to_owned());
+        }
+    };
+    if input_file
+        .write_all(source)
+        .and_then(|()| input_file.flush())
+        .is_err()
+    {
+        drop(input_file);
+        return cleanup_failure_or(
+            artifacts,
+            &[&private_input],
+            StrategyResult::Warning("cannot write the private provider input".to_owned()),
+        );
+    }
+    drop(input_file);
+    let candidate_path = match artifacts.reserve_path("provider-candidate") {
+        Ok(path) => path,
+        Err(_) => {
+            return cleanup_failure_or(
+                artifacts,
+                &[&private_input],
+                StrategyResult::Warning("cannot reserve the provider candidate path".to_owned()),
+            );
+        }
+    };
+
+    let executable = match std::env::current_exe() {
+        Ok(path) => path,
+        Err(_) => {
+            return cleanup_failure_or(
+                artifacts,
+                &[&private_input, &candidate_path],
+                StrategyResult::Warning("cannot identify the current executable".to_owned()),
+            );
+        }
+    };
+    let mut child = match Command::new(executable)
+        .arg(WORKER_ROLE)
+        .arg(OXIPNG_STRATEGY)
+        .arg(LIMITS_VERSION)
+        .arg(&private_input)
+        .arg(&candidate_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => {
+            return cleanup_failure_or(
+                artifacts,
+                &[&private_input, &candidate_path],
+                StrategyResult::Warning("cannot start the provider worker".to_owned()),
+            );
+        }
+    };
+
+    let stdout = child.stdout.take().map(spawn_capture);
+    let stderr = child.stderr.take().map(spawn_capture);
+    let started = Instant::now();
+    let (status, timed_out) = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break (Some(status), false),
+            Ok(None) if started.elapsed() < WORKER_TIMEOUT => {
+                thread::sleep(Duration::from_millis(10));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                break (child.wait().ok(), true);
+            }
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break (None, false);
+            }
+        }
+    };
+    let stdout = join_capture(stdout);
+    let stderr = join_capture(stderr);
+
+    let mut result = if timed_out {
+        StrategyResult::Warning("OxiPNG exceeded the worker timeout".to_owned())
+    } else if status.is_none_or(|status| !status.success()) {
+        let detail = diagnostic_detail(&stderr, &stdout);
+        StrategyResult::Warning(match detail {
+            Some(detail) => format!("OxiPNG worker failed: {detail}"),
+            None => "OxiPNG worker failed".to_owned(),
+        })
+    } else if stdout
+        .as_ref()
+        .is_some_and(|capture| !capture.bytes.is_empty())
+    {
+        StrategyResult::Warning("OxiPNG worker produced unexpected standard output".to_owned())
+    } else if stderr.as_ref().is_some_and(|capture| capture.truncated)
+        || stdout.as_ref().is_some_and(|capture| capture.truncated)
+    {
+        StrategyResult::Warning("OxiPNG worker diagnostics exceeded the byte limit".to_owned())
+    } else if !private_input_matches(&private_input, source) {
+        StrategyResult::Failure("the private provider input changed during execution")
+    } else {
+        read_candidate(&candidate_path)
+    };
+
+    result = cleanup_failure_or(artifacts, &[&private_input, &candidate_path], result);
+    result
+}
+
+fn run_private(arguments: &[OsString]) -> i32 {
+    if arguments.len() != 6
+        || arguments[2] != OsStr::new(OXIPNG_STRATEGY)
+        || arguments[3] != OsStr::new(LIMITS_VERSION)
+    {
+        return private_error("invalid private worker protocol");
+    }
+    let input = Path::new(&arguments[4]);
+    let candidate = Path::new(&arguments[5]);
+    let bytes = match read_bounded(input, MAX_SOURCE_BYTES) {
+        Ok(bytes) => bytes,
+        Err(message) => return private_error(message),
+    };
+    if validate_source(&bytes).is_err() {
+        return private_error("private provider input failed PNG validation");
+    }
+    let options = oxipng_options();
+    let optimized = match oxipng::optimize_from_memory(&bytes, &options) {
+        Ok(bytes) => bytes,
+        Err(_) => return private_error("OxiPNG could not optimize the private input"),
+    };
+    if optimized.len() as u64 > MAX_CANDIDATE_BYTES {
+        return private_error("OxiPNG candidate exceeds the candidate-byte limit");
+    }
+    let mut output = match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(candidate)
+    {
+        Ok(file) => file,
+        Err(_) => return private_error("cannot create the private candidate"),
+    };
+    if output
+        .write_all(&optimized)
+        .and_then(|()| output.flush())
+        .is_err()
+    {
+        return private_error("cannot write the private candidate");
+    }
+    0
+}
+
+fn oxipng_options() -> Options {
+    Options {
+        fix_errors: false,
+        force: true,
+        filters: indexset! {
+            FilterStrategy::NONE,
+            FilterStrategy::SUB,
+            FilterStrategy::Entropy,
+            FilterStrategy::Bigrams,
+        },
+        interlace: None,
+        optimize_alpha: false,
+        bit_depth_reduction: false,
+        color_type_reduction: false,
+        palette_reduction: false,
+        grayscale_reduction: false,
+        idat_recoding: true,
+        scale_16: false,
+        strip: StripChunks::None,
+        deflater: Deflater::Libdeflater { compression: 11 },
+        fast_evaluation: true,
+        timeout: Some(PROVIDER_TIMEOUT),
+        max_decompressed_size: Some(MAX_RECONSTRUCTED_BYTES),
+    }
+}
+
+fn read_candidate(path: &Path) -> StrategyResult {
+    match read_bounded(path, MAX_CANDIDATE_BYTES) {
+        Ok(bytes) => StrategyResult::Candidate(bytes),
+        Err(message) => StrategyResult::Warning(message.to_owned()),
+    }
+}
+
+fn read_bounded(path: &Path, maximum: u64) -> Result<Vec<u8>, &'static str> {
+    let metadata = fs::symlink_metadata(path).map_err(|_| "cannot inspect the worker file")?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err("worker file is not a regular non-symlink file");
+    }
+    if metadata.len() > maximum {
+        return Err("worker file exceeds its byte limit");
+    }
+    let file = File::open(path).map_err(|_| "cannot open the worker file")?;
+    let mut bytes = Vec::with_capacity(usize::try_from(metadata.len()).unwrap_or(0));
+    file.take(maximum + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "cannot read the worker file")?;
+    if bytes.len() as u64 > maximum {
+        return Err("worker file exceeds its byte limit");
+    }
+    Ok(bytes)
+}
+
+fn private_input_matches(path: &Path, expected: &[u8]) -> bool {
+    read_bounded(path, MAX_SOURCE_BYTES).is_ok_and(|bytes| bytes == expected)
+}
+
+fn cleanup_failure_or(
+    artifacts: &mut Artifacts,
+    paths: &[&Path],
+    result: StrategyResult,
+) -> StrategyResult {
+    let mut failed = false;
+    for path in paths {
+        match fs::symlink_metadata(path) {
+            Ok(_) => {
+                if artifacts.remove(path).is_err() {
+                    failed = true;
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => artifacts.forget(path),
+            Err(_) => failed = true,
+        }
+    }
+    if failed {
+        StrategyResult::Failure("cannot clean current-run provider artifacts")
+    } else {
+        result
+    }
+}
+
+#[derive(Debug)]
+struct Captured {
+    bytes: Vec<u8>,
+    truncated: bool,
+}
+
+fn spawn_capture(mut reader: impl Read + Send + 'static) -> JoinHandle<Captured> {
+    thread::spawn(move || {
+        let mut retained = Vec::new();
+        let mut buffer = [0u8; 8 * 1024];
+        let mut truncated = false;
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) | Err(_) => break,
+                Ok(length) => {
+                    let available = MAX_DIAGNOSTIC_BYTES.saturating_sub(retained.len());
+                    let to_keep = available.min(length);
+                    retained.extend_from_slice(&buffer[..to_keep]);
+                    truncated |= to_keep != length;
+                }
+            }
+        }
+        Captured {
+            bytes: retained,
+            truncated,
+        }
+    })
+}
+
+fn join_capture(handle: Option<JoinHandle<Captured>>) -> Option<Captured> {
+    handle.and_then(|handle| handle.join().ok())
+}
+
+fn diagnostic_detail(stderr: &Option<Captured>, stdout: &Option<Captured>) -> Option<String> {
+    stderr
+        .as_ref()
+        .filter(|capture| !capture.bytes.is_empty())
+        .or_else(|| stdout.as_ref().filter(|capture| !capture.bytes.is_empty()))
+        .map(|capture| {
+            let mut escaped = escape_worker_text(&capture.bytes);
+            if capture.truncated {
+                escaped.push_str(" [truncated]");
+            }
+            escaped
+        })
+}
+
+fn private_error(message: &str) -> i32 {
+    let _ = writeln!(io::stderr().lock(), "{message}");
+    1
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write as _;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use flate2::Compression;
+    use flate2::write::ZlibEncoder;
+
+    use super::*;
+
+    static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn options_pin_every_policy_boundary() {
+        let options = oxipng_options();
+        assert!(!options.fix_errors);
+        assert!(options.force);
+        assert_eq!(options.interlace, None);
+        assert!(!options.optimize_alpha);
+        assert!(!options.bit_depth_reduction);
+        assert!(!options.color_type_reduction);
+        assert!(!options.palette_reduction);
+        assert!(!options.grayscale_reduction);
+        assert!(options.idat_recoding);
+        assert!(!options.scale_16);
+        assert_eq!(options.strip, StripChunks::None);
+        assert_eq!(options.timeout, Some(PROVIDER_TIMEOUT));
+        assert_eq!(options.max_decompressed_size, Some(MAX_RECONSTRUCTED_BYTES));
+    }
+
+    #[test]
+    fn fixed_strategy_produces_a_candidate() {
+        let directory = test_directory();
+        let source = compressible_png();
+        let input = directory.join("input.png");
+        let candidate_path = directory.join("candidate.png");
+        fs::write(&input, &source).unwrap();
+        let arguments = [
+            OsString::from("imglean"),
+            OsString::from(WORKER_ROLE),
+            OsString::from(OXIPNG_STRATEGY),
+            OsString::from(LIMITS_VERSION),
+            input.into_os_string(),
+            candidate_path.clone().into_os_string(),
+        ];
+        assert_eq!(run_private(&arguments), 0);
+        let candidate = fs::read(candidate_path).unwrap();
+        assert!(!candidate.is_empty());
+        assert!(candidate.len() <= source.len());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn bounded_capture_drains_and_marks_truncation() {
+        let bytes = vec![b'x'; MAX_DIAGNOSTIC_BYTES + 10];
+        let captured = spawn_capture(io::Cursor::new(bytes)).join().unwrap();
+        assert_eq!(captured.bytes.len(), MAX_DIAGNOSTIC_BYTES);
+        assert!(captured.truncated);
+    }
+
+    #[test]
+    fn bounded_worker_read_rejects_oversized_and_symlink_files() {
+        let directory = test_directory();
+        let oversized = directory.join("oversized");
+        fs::write(&oversized, b"1234").unwrap();
+        assert_eq!(
+            read_bounded(&oversized, 3),
+            Err("worker file exceeds its byte limit")
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            let link = directory.join("link");
+            symlink(&oversized, &link).unwrap();
+            assert_eq!(
+                read_bounded(&link, 8),
+                Err("worker file is not a regular non-symlink file")
+            );
+        }
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn compressible_png() -> Vec<u8> {
+        let width = 64u32;
+        let height = 64u32;
+        let mut filtered = Vec::new();
+        for _ in 0..height {
+            filtered.push(0);
+            filtered.extend(std::iter::repeat_n(0, width as usize * 4));
+        }
+        let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+        let mut ihdr = Vec::new();
+        ihdr.extend_from_slice(&width.to_be_bytes());
+        ihdr.extend_from_slice(&height.to_be_bytes());
+        ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
+        push_chunk(&mut png, b"IHDR", &ihdr);
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+        encoder.write_all(&filtered).unwrap();
+        push_chunk(&mut png, b"IDAT", &encoder.finish().unwrap());
+        push_chunk(&mut png, b"IEND", &[]);
+        png
+    }
+
+    fn push_chunk(png: &mut Vec<u8>, name: &[u8; 4], data: &[u8]) {
+        png.extend_from_slice(&u32::try_from(data.len()).unwrap().to_be_bytes());
+        png.extend_from_slice(name);
+        png.extend_from_slice(data);
+        let mut crc = crc32fast::Hasher::new();
+        crc.update(name);
+        crc.update(data);
+        png.extend_from_slice(&crc.finalize().to_be_bytes());
+    }
+
+    fn test_directory() -> PathBuf {
+        let unique = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "imglean-worker-test-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir(&path).unwrap();
+        path
+    }
+}

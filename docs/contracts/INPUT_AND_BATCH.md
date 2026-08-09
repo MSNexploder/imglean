@@ -1,11 +1,15 @@
 # Version 0.1 Input and Batch Contract
 
 > [!IMPORTANT]
-> This is an approved planned version 0.1 design commitment, not implemented behavior. It may change when reviewed feasibility or implementation evidence requires it.
+> This is the implemented version 0.1 input and batch contract.
 
 ## Boundary
 
-This document records the decisions required before implementing version 0.1 input handling. Exact constants belong with tested code, not in this design document. Version 0.1 deliberately uses common path and file operations and does not promise defense against adversarial replacement of path components while an invocation is running.
+This document records version 0.1 input handling. Exact constants and their
+enforcement classifications are in [LIMITS.md](LIMITS.md). Version 0.1
+deliberately uses common path and file operations and does not promise defense
+against adversarial replacement of path components while an invocation is
+running.
 
 ## Invocation and preflight
 
@@ -41,7 +45,10 @@ The sidecar names are derived from the canonical source path's filename and chec
 
 Version 0.1 processes inputs sequentially after batch preflight. Its single optimizing strategy runs in a separate worker, and the current input is committed and reported before the next begins.
 
-The implementation must bound and test input count, per-input and aggregate captured bytes, worker concurrency, temporary and candidate storage, buffered diagnostics, and total elapsed time. Exact release values are version-controlled with the implementation after measurement.
+The implementation bounds and tests input count, per-input and aggregate
+captured bytes, worker concurrency, temporary and candidate storage, buffered
+diagnostics, and total elapsed time. Exact release values are version-controlled
+in [LIMITS.md](LIMITS.md) and `src/limits.rs`.
 
 An invocation-wide limit breach cancels the current work, prevents later commits, cleans current-run uncommitted artifacts, reports later inputs as not processed in the standard-error summary, and exits `1`. Outputs already committed remain valid.
 
