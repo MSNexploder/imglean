@@ -61,4 +61,7 @@ run = "python tools/generate_notices.py"
 
 [tasks.sbom]
 description = "Generate an SPDX 2.3 software bill of materials"
-run = "python tools/generate_sbom.py > target/imglean.spdx.json"
+run = [
+  "python -c \"from pathlib import Path; Path('target').mkdir(exist_ok=True)\"",
+  "python tools/generate_sbom.py > target/imglean.spdx.json",
+]
