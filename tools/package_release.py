@@ -36,7 +36,7 @@ def main() -> int:
     parser.add_argument("--allow-dirty", action="store_true")
     args = parser.parse_args()
     if args.target not in RELEASE_TARGETS:
-        parser.error(f"unsupported version 0.3 release target: {args.target}")
+        parser.error(f"unsupported version 0.4 release target: {args.target}")
 
     required = [
         args.binary,
@@ -45,6 +45,7 @@ def main() -> int:
         ROOT / "Cargo.lock",
         ROOT / "LICENSE.md",
         ROOT / "ci/optipng-version.txt",
+        ROOT / "ci/pngquant-versions.txt",
     ]
     for path in required:
         if not path.is_file():
@@ -173,7 +174,7 @@ def release_manifest(
         if node["id"] in identities
     }
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "package": "imglean",
         "version": tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"],
         "source_commit": run(["git", "rev-parse", "HEAD"]),
@@ -209,13 +210,40 @@ def release_manifest(
                 "supported_version": (ROOT / "ci/optipng-version.txt").read_text(encoding="ascii").strip(),
                 "arguments": ["-quiet", "-o2", "-out", "CANDIDATE", "--", "INPUT"],
             },
+            {
+                "id": "pngquant-v1",
+                "execution": "external-optional",
+                "provider": "pngquant",
+                "supported_versions": (ROOT / "ci/pngquant-versions.txt")
+                .read_text(encoding="ascii")
+                .splitlines(),
+                "applicability": "numeric quality only",
+                "arguments": [
+                    "--force",
+                    "--quality",
+                    "0-QUALITY",
+                    "--speed",
+                    "4",
+                    "--strip",
+                    "--output",
+                    "CANDIDATE",
+                    "--",
+                    "INPUT",
+                ],
+            },
         ],
+        "quality_policy": {
+            "accepted": "lossless or an integer from 1 through 100",
+            "default": "lossless",
+            "numeric_mapping": "provider-native and strategy-versioned",
+            "candidate_trust": "basic PNG gate plus audited provider settings",
+        },
         "strategy_workers": {
             "default_cap": 2,
             "maximum": 3,
             "selection": "minimum of available parallelism and default cap",
         },
-        "limits_version": "v3",
+        "limits_version": "v4",
         "build_environment": {
             "platform": platform.platform(),
             "packager": f"Python {platform.python_version()}",

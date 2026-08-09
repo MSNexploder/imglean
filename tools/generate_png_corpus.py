@@ -111,6 +111,13 @@ def main() -> None:
     filtered = b"".join(b"\x00" + bytes(64 * 4) for _ in range(64))
     write("accepted", "oxipng-reduction.png", png(64, 64, 8, 6, filtered, level=0))
 
+    filtered = bytearray()
+    for y in range(128):
+        filtered.append(0)
+        for x in range(128):
+            filtered.extend((x * 2, y * 2, x + y, 255))
+    write("accepted", "pngquant-reduction.png", png(128, 128, 8, 6, bytes(filtered), level=0))
+
     write("changed", "source.png", png(2, 1, 8, 0, b"\x00\x0a\x14"))
     write("changed", "candidate.png", png(2, 1, 8, 0, b"\x00\x0a\x15"))
 

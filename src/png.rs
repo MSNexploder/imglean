@@ -255,6 +255,7 @@ mod tests {
             include_bytes!("../tests/corpus/png/v2/accepted/icc-profile.png").as_slice(),
             include_bytes!("../tests/corpus/png/v2/accepted/exif.png").as_slice(),
             include_bytes!("../tests/corpus/png/v2/accepted/unknown-ancillary.png").as_slice(),
+            include_bytes!("../tests/corpus/png/v2/accepted/pngquant-reduction.png").as_slice(),
         ] {
             validate_source(bytes).unwrap();
         }

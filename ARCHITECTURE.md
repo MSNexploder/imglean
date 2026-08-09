@@ -1,7 +1,7 @@
 # ImgLean Architecture
 
 > [!IMPORTANT]
-> This document describes the implemented version 0.3 component boundaries.
+> This document describes the implemented version 0.4 component boundaries.
 
 ## System shape
 
@@ -25,14 +25,17 @@ The versioned registry fixes strategy identity and order:
 
 1. `oxipng-libdeflate-v1` — embedded;
 2. `oxipng-zopfli-v1` — embedded;
-3. `optipng-v1` — external OptiPNG 7.9.1 when available.
+3. `optipng-v1` — external OptiPNG 7.9.1 when available;
+4. `pngquant-v1` — external pngquant 3.0.2 or 3.0.3 at numeric quality.
 
 Compatible embedded strategies are enabled unless disabled. External discovery
-resolves a configured executable or the first executable named `optipng` on
-`PATH`, probes its version once under a short deadline, and retains that
-canonical path and version for the invocation. Automatic absence or
-incompatibility skips the strategy; an explicitly required provider turns the
-same condition into structural preflight failure. Discovery never downloads or
+resolves a configured executable or the first supported executable on `PATH` on
+every platform. It probes each applicable provider once under a short deadline
+and retains its canonical path and version for the invocation. Numeric quality
+leaves all lossless strategies applicable and enables pngquant; lossless quality
+marks pngquant not applicable without probing it. Automatic absence or
+incompatibility skips a strategy; an explicitly required provider turns the same
+condition into structural preflight failure. Discovery never downloads or
 changes provider software.
 
 ## Controller responsibilities
@@ -46,8 +49,9 @@ destination paths.
 Source and candidate PNG bytes pass through the same bounded format validator.
 It verifies the signature, chunk framing and CRCs, complete static image decode,
 resource bounds, and the C2PA/XMP refusal. Candidate dimensions must match the
-source. The provider's audited lossless and metadata configuration—not a second
-pixel or ancillary comparison—establishes transformation semantics.
+source. The provider's audited fidelity and metadata configuration—not a second
+pixel, perceptual-quality, or ancillary comparison—establishes transformation
+semantics.
 
 ## Per-input flow
 

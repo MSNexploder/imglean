@@ -11,11 +11,11 @@ use crate::artifacts::Artifacts;
 use crate::diagnostics::escape_worker_text;
 use crate::limits::{
     EMBEDDED_WORKER_TIMEOUT, LIMITS_VERSION, MAX_CANDIDATE_BYTES, MAX_RECONSTRUCTED_BYTES,
-    MAX_SOURCE_BYTES, MAX_TEMPORARY_BYTES, OPTIPNG_TIMEOUT, OXIPNG_TIMEOUT,
+    MAX_SOURCE_BYTES, MAX_TEMPORARY_BYTES, OPTIPNG_TIMEOUT, OXIPNG_TIMEOUT, PNGQUANT_TIMEOUT,
 };
 use crate::png::validate_source;
 use crate::process::{self, Capture};
-use crate::strategy::{Execution, Strategy, StrategyId};
+use crate::strategy::{Execution, Quality, Strategy, StrategyId};
 
 const WORKER_ROLE: &str = "--imglean-internal-worker-v2";
 
@@ -41,6 +41,7 @@ pub fn run_strategy(
     artifacts: &mut Artifacts,
     source: &[u8],
     strategy: &Strategy,
+    quality: Quality,
 ) -> StrategyResult {
     let maximum_live_bytes = (source.len() as u64)
         .checked_mul(2)
@@ -80,7 +81,7 @@ pub fn run_strategy(
         }
     };
 
-    let command = match strategy_command(strategy, &private_input, &candidate_path) {
+    let command = match strategy_command(strategy, quality, &private_input, &candidate_path) {
         Ok(command) => command,
         Err(message) => {
             return cleanup_failure_or(
@@ -90,9 +91,10 @@ pub fn run_strategy(
             );
         }
     };
-    let timeout = match strategy.execution {
-        Execution::Embedded => EMBEDDED_WORKER_TIMEOUT,
-        Execution::External { .. } => OPTIPNG_TIMEOUT,
+    let timeout = match strategy.id {
+        StrategyId::OxipngLibdeflateV1 | StrategyId::OxipngZopfliV1 => EMBEDDED_WORKER_TIMEOUT,
+        StrategyId::OptipngV1 => OPTIPNG_TIMEOUT,
+        StrategyId::PngquantV1 => PNGQUANT_TIMEOUT,
     };
     let output = match process::run(command, timeout) {
         Ok(output) => output,
@@ -105,8 +107,18 @@ pub fn run_strategy(
         }
     };
 
-    let mut result = if output.timed_out {
+    let mut result = if !private_input_matches(&private_input, source) {
+        StrategyResult::Failure("the private provider input changed during execution")
+    } else if output.timed_out {
         StrategyResult::Warning("worker timeout exceeded".to_owned())
+    } else if output.stderr.truncated || output.stdout.truncated {
+        StrategyResult::Warning("worker diagnostics exceeded the byte limit".to_owned())
+    } else if strategy.id == StrategyId::PngquantV1
+        && output
+            .status
+            .is_some_and(|status| status.code() == Some(99))
+    {
+        StrategyResult::NoCandidate
     } else if output.status.is_none_or(|status| !status.success()) {
         let detail = diagnostic_detail(&output.stderr, &output.stdout);
         StrategyResult::Warning(match detail {
@@ -115,10 +127,6 @@ pub fn run_strategy(
         })
     } else if matches!(strategy.execution, Execution::Embedded) && !output.stdout.bytes.is_empty() {
         StrategyResult::Warning("worker produced unexpected standard output".to_owned())
-    } else if output.stderr.truncated || output.stdout.truncated {
-        StrategyResult::Warning("worker diagnostics exceeded the byte limit".to_owned())
-    } else if !private_input_matches(&private_input, source) {
-        StrategyResult::Failure("the private provider input changed during execution")
     } else {
         read_candidate(&candidate_path)
     };
@@ -129,6 +137,7 @@ pub fn run_strategy(
 
 fn strategy_command(
     strategy: &Strategy,
+    quality: Quality,
     private_input: &Path,
     candidate_path: &Path,
 ) -> Result<Command, &'static str> {
@@ -151,6 +160,24 @@ fn strategy_command(
                 .arg("-quiet")
                 .arg("-o2")
                 .arg("-out")
+                .arg(candidate_path)
+                .arg("--")
+                .arg(private_input);
+            Ok(command)
+        }
+        Execution::External { executable, .. } if strategy.id == StrategyId::PngquantV1 => {
+            let Some(quality) = quality.numeric() else {
+                return Err("pngquant requires numeric quality");
+            };
+            let mut command = Command::new(executable);
+            command
+                .arg("--force")
+                .arg("--quality")
+                .arg(format!("0-{quality}"))
+                .arg("--speed")
+                .arg("4")
+                .arg("--strip")
+                .arg("--output")
                 .arg(candidate_path)
                 .arg("--")
                 .arg(private_input);
@@ -214,7 +241,9 @@ fn oxipng_options(strategy: StrategyId) -> Options {
             iterations_without_improvement: NonZeroU64::new(u64::MAX).expect("u64::MAX is nonzero"),
             maximum_block_splits: 15,
         }),
-        StrategyId::OptipngV1 => unreachable!("OptiPNG does not use OxiPNG options"),
+        StrategyId::OptipngV1 | StrategyId::PngquantV1 => {
+            unreachable!("external strategies do not use OxiPNG options")
+        }
     };
     Options {
         fix_errors: false,
@@ -401,6 +430,7 @@ mod tests {
         let strategy = external_strategy(PathBuf::from("provider"));
         let command = strategy_command(
             &strategy,
+            Quality::Lossless,
             Path::new("private-input.png"),
             Path::new("candidate.png"),
         )
@@ -412,6 +442,34 @@ mod tests {
                 OsStr::new("-quiet"),
                 OsStr::new("-o2"),
                 OsStr::new("-out"),
+                OsStr::new("candidate.png"),
+                OsStr::new("--"),
+                OsStr::new("private-input.png"),
+            ]
+        );
+    }
+
+    #[test]
+    fn pngquant_command_pins_quality_and_every_adapter_argument() {
+        let strategy = pngquant_strategy(PathBuf::from("provider"));
+        let command = strategy_command(
+            &strategy,
+            Quality::Numeric(80),
+            Path::new("private-input.png"),
+            Path::new("candidate.png"),
+        )
+        .unwrap();
+        assert_eq!(command.get_program(), OsStr::new("provider"));
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [
+                OsStr::new("--force"),
+                OsStr::new("--quality"),
+                OsStr::new("0-80"),
+                OsStr::new("--speed"),
+                OsStr::new("4"),
+                OsStr::new("--strip"),
+                OsStr::new("--output"),
                 OsStr::new("candidate.png"),
                 OsStr::new("--"),
                 OsStr::new("private-input.png"),
@@ -431,7 +489,12 @@ mod tests {
         );
         let mut artifacts = Artifacts::new(directory.clone());
         assert_eq!(
-            run_strategy(&mut artifacts, &source, &external_strategy(success)),
+            run_strategy(
+                &mut artifacts,
+                &source,
+                &external_strategy(success),
+                Quality::Lossless,
+            ),
             StrategyResult::Candidate(source.clone())
         );
 
@@ -440,12 +503,52 @@ mod tests {
             &failure,
             "#!/bin/sh\nprintf 'provider failed\\n' >&2\nexit 9\n",
         );
-        let result = run_strategy(&mut artifacts, &source, &external_strategy(failure));
+        let result = run_strategy(
+            &mut artifacts,
+            &source,
+            &external_strategy(failure),
+            Quality::Lossless,
+        );
         assert!(matches!(
             result,
             StrategyResult::Warning(message) if message.contains("provider failed")
         ));
-        assert_eq!(fs::read_dir(&directory).unwrap().count(), 2);
+
+        let mutation = directory.join("mutating-optipng");
+        write_executable(
+            &mutation,
+            "#!/bin/sh\nfor input do :; done\nprintf changed > \"$input\"\nexit 9\n",
+        );
+        assert_eq!(
+            run_strategy(
+                &mut artifacts,
+                &source,
+                &external_strategy(mutation),
+                Quality::Lossless,
+            ),
+            StrategyResult::Failure("the private provider input changed during execution")
+        );
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 3);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pngquant_quality_rejection_is_a_normal_missing_candidate() {
+        let directory = test_directory();
+        let executable = directory.join("pngquant");
+        write_executable(&executable, "#!/bin/sh\nexit 99\n");
+        let mut artifacts = Artifacts::new(directory.clone());
+        assert_eq!(
+            run_strategy(
+                &mut artifacts,
+                &compressible_png(),
+                &pngquant_strategy(executable),
+                Quality::Numeric(100),
+            ),
+            StrategyResult::NoCandidate
+        );
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -530,6 +633,16 @@ mod tests {
             execution: Execution::External {
                 executable,
                 version: "7.9.1".to_owned(),
+            },
+        }
+    }
+
+    fn pngquant_strategy(executable: PathBuf) -> Strategy {
+        Strategy {
+            id: StrategyId::PngquantV1,
+            execution: Execution::External {
+                executable,
+                version: "3.0.2".to_owned(),
             },
         }
     }

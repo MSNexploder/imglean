@@ -1,4 +1,4 @@
-# Version 0.3 PNG Contract
+# Version 0.4 PNG Contract
 
 > [!IMPORTANT]
 > This is the implemented static-PNG validation and acceptance contract.
@@ -19,7 +19,7 @@ repaired.
 
 ## Explicit policy refusals
 
-`acTL`, `fcTL`, or `fdAT` rejects the file because version 0.3 does not process
+`acTL`, `fcTL`, or `fdAT` rejects the file because version 0.4 does not process
 APNG. `caBX` rejects C2PA-bearing PNG. A `tEXt`, `zTXt`, or `iTXt` chunk whose
 keyword is `XML:com.adobe.xmp` rejects standard XMP. Adjacent external C2PA
 manifests are refused by the input contract. No remote lookup occurs.
@@ -44,12 +44,13 @@ accepted candidate replaces the winner. A valid larger or equal-size candidate
 is normal and does not warn.
 
 ImgLean does not compare decoded samples, RGB beneath full transparency, chunk
-order, or ancillary payload identity. Those transformations remain opaque
-provider output. Losslessness and metadata preservation are therefore claims of
-the audited, versioned provider configuration. No version 0.3 strategy is
-configured to repair errors, reduce fidelity, deliberately strip metadata,
-alter fully transparent RGB, or force an interlace change. Lossless
-representation reductions performed by an audited provider are permitted.
+order, ancillary payload identity, or perceptual quality. Those transformations
+remain opaque provider output. Fidelity and metadata behavior are therefore
+properties of the audited, versioned provider configuration. The lossless
+strategies do not request error repair, fidelity reduction, metadata stripping,
+transparent-RGB changes, or forced interlace changes. At numeric quality,
+`pngquant-v1` intentionally reduces colors and strips optional metadata. Every
+candidate still passes the structural gate above.
 
 ## Bounds and corpus
 

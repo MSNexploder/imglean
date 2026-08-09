@@ -1,19 +1,19 @@
-# Version 0.3 Input and Batch Contract
+# Version 0.4 Input and Batch Contract
 
 > [!IMPORTANT]
-> This is the implemented version 0.3 input and batch contract.
+> This is the implemented version 0.4 input and batch contract.
 
 ## Boundary
 
-This document records version 0.3 input handling. Exact constants and their
-enforcement classifications are in [LIMITS.md](LIMITS.md). Version 0.3
+This document records version 0.4 input handling. Exact constants and their
+enforcement classifications are in [LIMITS.md](LIMITS.md). Version 0.4
 deliberately uses common path and file operations and does not promise defense
 against adversarial replacement of path components while an invocation is
 running.
 
 ## Invocation and preflight
 
-Version 0.3 accepts explicit regular files and one required existing output directory:
+Version 0.4 accepts explicit regular files and one required existing output directory:
 
 ```text
 imglean --output OUTPUT_DIRECTORY INPUT...
@@ -27,7 +27,7 @@ The controller captures the initial working directory and preflights the complet
 
 The output directory must be an existing directory. The controller creates each complete internal output there so publication is a same-directory rename rather than a cross-filesystem operation.
 
-Preflight retains each opened source file. Later capture reads that open file rather than resolving the user-provided pathname again. Sidecar and output operations remain path-based; concurrent path replacement can make them fail or redirect them, and version 0.3 does not claim otherwise. The entry occupying a requested destination at publication may be replaced even if it appeared or changed after preflight.
+Preflight retains each opened source file. Later capture reads that open file rather than resolving the user-provided pathname again. Sidecar and output operations remain path-based; concurrent path replacement can make them fail or redirect them, and version 0.4 does not claim otherwise. The entry occupying a requested destination at publication may be replaced even if it appeared or changed after preflight.
 
 ## Source capture
 
@@ -39,11 +39,11 @@ The captured bytes are the source of truth for validation, the controller-owned 
 
 Embedded PNG handling is defined in [PNG.md](PNG.md). For an accepted basename, the C2PA-defined external-manifest path replaces the final extension with `.c2pa`; ImgLean's additional conservative heuristic appends `.c2pa` to the complete basename. Thus `photo.png` checks `photo.c2pa` and `photo.png.c2pa`. Names without an unambiguous stem and extension are already rejected during structural preflight.
 
-The sidecar names are derived from the canonical source path's filename and checked beside that canonical source. Immediately before and after source capture, the controller checks both pathnames. Any filesystem entry or lookup failure is a per-input source-validation failure. Later sidecar changes are intentionally ignored because the output represents that capture. ImgLean does not parse the sidecar or access the network. Concurrent renaming or replacement of the source parent can affect these path-based checks and is outside the version 0.3 guarantee.
+The sidecar names are derived from the canonical source path's filename and checked beside that canonical source. Immediately before and after source capture, the controller checks both pathnames. Any filesystem entry or lookup failure is a per-input source-validation failure. Later sidecar changes are intentionally ignored because the output represents that capture. ImgLean does not parse the sidecar or access the network. Concurrent renaming or replacement of the source parent can affect these path-based checks and is outside the version 0.4 guarantee.
 
 ## Work limits and sequencing
 
-Version 0.3 processes inputs sequentially after batch preflight. Enabled
+Version 0.4 processes inputs sequentially after batch preflight. Enabled
 strategies for the current input run through a bounded worker pool before its
 winner is committed and reported and the next input begins. Provider resolution,
 including required external-provider checks, completes before input processing.
@@ -64,7 +64,8 @@ standard-output result after its commit or failure decision and before the next
 input begins. A successful result names the winning strategy or baseline. A
 successful block lists the baseline followed by every registered strategy in
 registry order, its encoded byte count or outcome, one marked winner, and the
-destination. Disabled, unavailable, and not-run strategies remain visible.
+destination. Disabled, unavailable, not-applicable, and not-run strategies
+remain visible.
 Strategy warnings and candidate rejections appear inline in that block. A
 structural abort emits only standard-error diagnostics. Resolved
 external-provider records, failure details, and the compact summary go to

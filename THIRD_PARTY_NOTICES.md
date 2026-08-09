@@ -887,7 +887,7 @@ limitations under the License.
 
 Used by:
 
-- imglean 0.3.0
+- imglean 0.4.0
 
 ```text
 # ImgLean License

@@ -33,7 +33,7 @@ jobs:
       - name: Build release executable
         run: cargo build --locked --release --target ${{ matrix.target }}
 
-  external-provider:
+  optipng-provider:
     name: OptiPNG adapter (${{ matrix.target }})
     strategy:
       fail-fast: false
@@ -99,6 +99,67 @@ jobs:
           mise exec -- python tools/test_external_provider.py
           --binary ${{ matrix.binary }}
           --provider "${{ steps.optipng_source.outputs.path || steps.optipng_windows.outputs.path }}"
+
+  pngquant-provider:
+    name: pngquant ${{ matrix.pngquant }} adapter (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            binary: target/x86_64-unknown-linux-gnu/release/imglean
+            extension: ""
+            pngquant: "3.0.2"
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            binary: target/x86_64-unknown-linux-gnu/release/imglean
+            extension: ""
+            pngquant: "3.0.3"
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            binary: target/x86_64-apple-darwin/release/imglean
+            extension: ""
+            pngquant: "3.0.2"
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            binary: target/x86_64-apple-darwin/release/imglean
+            extension: ""
+            pngquant: "3.0.3"
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            binary: target/x86_64-pc-windows-msvc/release/imglean.exe
+            extension: .exe
+            pngquant: "3.0.2"
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            binary: target/x86_64-pc-windows-msvc/release/imglean.exe
+            extension: .exe
+            pngquant: "3.0.3"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
+        with:
+          install: false
+      - name: Install build tools
+        run: mise install rust python
+      - name: Build ImgLean
+        run: cargo build --locked --release --target ${{ matrix.target }}
+      - name: Build supported pngquant
+        id: pngquant
+        shell: bash
+        run: |
+          root="$RUNNER_TEMP/pngquant-${{ matrix.pngquant }}"
+          cargo install --locked --version "${{ matrix.pngquant }}" --root "$root" pngquant
+          provider="$root/bin/pngquant${{ matrix.extension }}"
+          test -f "$provider"
+          echo "path=$provider" >> "$GITHUB_OUTPUT"
+      - name: Exercise discovery and real provider execution
+        run: >-
+          mise exec -- python tools/test_pngquant_provider.py
+          --binary ${{ matrix.binary }}
+          --provider "${{ steps.pngquant.outputs.path }}"
 
   compliance:
     name: Dependency and release records

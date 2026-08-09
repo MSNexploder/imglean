@@ -1,7 +1,7 @@
 # ImgLean Scope
 
 > [!IMPORTANT]
-> Version 0.3 is implemented in source. Target-specific release artifacts remain
+> Version 0.4 is implemented in source. Target-specific release artifacts remain
 > unpublished and unqualified until their native gates pass.
 
 ## Product definition
@@ -15,8 +15,7 @@ successful output is no larger than its source.
 The embedded workflow is offline and ships in one target-specific executable.
 Supported external executables may augment it when already installed; ImgLean
 does not download or manage them. The default distribution is permissively
-licensed. ImageOptim motivates the low-friction experience, but this document is
-the authoritative boundary.
+licensed. This document is the authoritative product boundary.
 
 ## Vocabulary
 
@@ -40,12 +39,12 @@ the authoritative boundary.
 - Keep strategy identifiers, order, provider versions, options, and limits
   explicit, versioned, tested, and recorded in release artifacts.
 - Keep the embedded workflow offline and permissively redistributable.
-- Require deliberate selection before enabling any future fidelity-reducing
-  policy.
+- Require deliberate numeric quality selection before enabling a
+  fidelity-reducing strategy.
 
-## Version 0.3
+## Version 0.4
 
-Version 0.3 supports explicit static PNG inputs and a required separate output
+Version 0.4 supports explicit static PNG inputs and a required separate output
 directory on 64-bit macOS, Linux, and Windows release targets. It accepts every
 standard static PNG color-type and bit-depth combination, including Adam7,
 within documented byte, dimension, pixel, allocation, chunk, and elapsed-time
@@ -55,23 +54,31 @@ refused.
 The controller performs a basic candidate gate: signature and chunk checksums,
 bounded complete decode, permitted static animation class, matching dimensions,
 and the explicit C2PA/XMP refusal. Other ancillary data is opaque. ImgLean does
-not compare decoded samples or ancillary payload identity; losslessness and
-metadata preservation are properties of the audited strategy configuration.
+not compare decoded samples, calculate perceptual quality, or compare ancillary
+payload identity; fidelity and metadata behavior are properties of the audited
+strategy configuration.
 
 The ordered registry is:
 
 1. OxiPNG 10.1.1 with libdeflater level 11, embedded;
-2. OxiPNG 10.1.1 with pinned Zopfli settings, embedded; and
-3. OptiPNG 7.9.1 at optimization level 2, external and optional.
+2. OxiPNG 10.1.1 with pinned Zopfli settings, embedded;
+3. OptiPNG 7.9.1 at optimization level 2, external and optional; and
+4. pngquant 3.0.2 or 3.0.3 at numeric quality, external and optional.
 
-Both embedded strategies are enabled by default. OptiPNG is discovered on
-`PATH`, or supplied with `--provider optipng PATH`, and is enabled when its exact
-supported version is available. Automatic absence or incompatibility is normal;
-an explicitly required or configured provider that is unavailable or
-incompatible fails preflight before output creation. Provider execution failure
-warns, excludes that candidate, and leaves the baseline and other strategies in
-the race. Every registered strategy remains visible in per-input reporting as a
-result, disabled, unavailable, or not-run row.
+`--quality lossless|1..100` defaults to `lossless`. Lossless strategies remain
+applicable at numeric quality. `pngquant-v1` is not applicable at lossless
+quality and maps numeric `Q` to pngquant's native `--quality 0-Q` setting.
+ImgLean does not emulate lossy transformations or independently score quality.
+
+Both embedded strategies are enabled by default. External providers are
+discovered on `PATH` or supplied with `--provider NAME PATH` on every platform.
+An exact supported version is required. Automatic absence or incompatibility is normal;
+an explicitly required or configured provider that is unavailable,
+incompatible, or not applicable fails preflight before output creation.
+Provider execution failure warns, excludes that candidate, and leaves the
+baseline and other strategies in the race. Every registered strategy remains
+visible in per-input reporting as a result, disabled, unavailable, not
+applicable, or not-run row.
 
 Complete input/output mapping preflight precedes all publication. Inputs are
 then processed independently and sequentially. Enabled strategies for one input
@@ -82,10 +89,10 @@ output directory and replaces an existing regular destination when present.
 
 ## Non-goals and future directions
 
-Version 0.3 does not provide directory traversal, standard-input pipelines,
-in-place operation, lossy optimization, format conversion, APNG processing, a
-general plugin ABI, provider downloads, remote services, transactional rollback,
-or backup creation. Additional formats, providers,
+Version 0.4 does not provide directory traversal, standard-input pipelines,
+in-place operation, format conversion, APNG processing, a general plugin ABI,
+provider downloads, remote services, transactional rollback, backup creation,
+or independent perceptual quality measurement. Additional formats, providers,
 architectures, and explicit fidelity policies require their own reviewed
 contracts.
 

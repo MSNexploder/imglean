@@ -5,8 +5,8 @@ as binary PNG fixtures. It covers every standard static PNG color-type and
 bit-depth combination, Adam7, palette transparency, common and unknown
 ancillary chunks, fully transparent nonzero color samples, malformed and
 truncated structure, APNG, XMP in all PNG text forms, `caBX`, trailing data,
-limit rejection, changed dimensions and pixels, and guaranteed reductions for
-the embedded and external provider integration tests.
+limit rejection, changed dimensions and pixels, and separate guaranteed
+reductions for the lossless and lossy provider integration tests.
 
 The validator test enumerates every accepted and policy-rejected fixture
 explicitly so a corpus change requires a reviewed expectation change.

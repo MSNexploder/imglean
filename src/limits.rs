@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-pub const LIMITS_VERSION: &str = "v3";
+pub const LIMITS_VERSION: &str = "v4";
 
 pub const MAX_INPUTS: usize = 128;
 pub const MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
@@ -24,6 +24,7 @@ pub const PROVIDER_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(2);
 pub const OXIPNG_TIMEOUT: Duration = Duration::from_secs(55);
 pub const EMBEDDED_WORKER_TIMEOUT: Duration = Duration::from_secs(60);
 pub const OPTIPNG_TIMEOUT: Duration = Duration::from_secs(60);
+pub const PNGQUANT_TIMEOUT: Duration = Duration::from_secs(60);
 pub const INVOCATION_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 #[cfg(test)]
@@ -35,6 +36,7 @@ mod tests {
         assert!(OXIPNG_TIMEOUT < EMBEDDED_WORKER_TIMEOUT);
         assert!(EMBEDDED_WORKER_TIMEOUT < INVOCATION_TIMEOUT);
         assert!(OPTIPNG_TIMEOUT < INVOCATION_TIMEOUT);
+        assert!(PNGQUANT_TIMEOUT < INVOCATION_TIMEOUT);
     }
 
     #[test]

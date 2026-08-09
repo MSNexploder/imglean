@@ -1,11 +1,11 @@
-# Version 0.3 Output Contract
+# Version 0.4 Output Contract
 
 > [!IMPORTANT]
-> This is the implemented version 0.3 output contract.
+> This is the implemented version 0.4 output contract.
 
 ## Boundary
 
-This document defines the portable output guarantees for version 0.3. It uses
+This document defines the portable output guarantees for version 0.4. It uses
 common file creation and the target's same-directory replacing-rename operation
 (`rename` on Unix and `MoveFileExW` with replacement on Windows). It protects
 normal local CLI operation but does not promise that paths remain bound to the

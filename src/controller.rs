@@ -15,6 +15,7 @@ use crate::strategy::{self, Execution, RegistryEntry, RegistryState, Strategy, S
 use crate::worker::{self, StrategyResult};
 
 pub fn run(arguments: Arguments, stdout: impl Write, mut stderr: impl Write) -> i32 {
+    let quality = arguments.strategies.quality;
     let registry = match strategy::resolve(&arguments.strategies) {
         Ok(registry) => registry,
         Err(error) => {
@@ -53,7 +54,9 @@ pub fn run(arguments: Arguments, stdout: impl Write, mut stderr: impl Write) -> 
         MAX_AGGREGATE_SOURCE_BYTES,
         INVOCATION_TIMEOUT,
         registry,
-        worker::run_strategy,
+        move |artifacts, source, strategy| {
+            worker::run_strategy(artifacts, source, strategy, quality)
+        },
     )
 }
 
@@ -234,7 +237,9 @@ fn process_input(
                     execution: execution.clone(),
                 },
             )),
-            RegistryState::Disabled | RegistryState::Unavailable => None,
+            RegistryState::Disabled | RegistryState::Unavailable | RegistryState::NotApplicable => {
+                None
+            }
         })
         .collect::<Vec<_>>();
     let (scheduled, spawn_failed) = execute_parallel(
@@ -431,6 +436,7 @@ enum AttemptOutcome {
     Failed,
     Disabled,
     Unavailable,
+    NotApplicable,
     NotRun,
 }
 
@@ -440,6 +446,7 @@ impl From<&RegistryEntry> for Attempt {
             RegistryState::Runnable(_) => AttemptOutcome::NotRun,
             RegistryState::Disabled => AttemptOutcome::Disabled,
             RegistryState::Unavailable => AttemptOutcome::Unavailable,
+            RegistryState::NotApplicable => AttemptOutcome::NotApplicable,
         };
         Self {
             strategy: entry.id,
@@ -518,6 +525,9 @@ fn push_attempt_line(
         }
         AttemptOutcome::Unavailable => {
             let _ = writeln!(report, "     {label:<24} unavailable");
+        }
+        AttemptOutcome::NotApplicable => {
+            let _ = writeln!(report, "     {label:<24} not applicable");
         }
         AttemptOutcome::NotRun => {
             let _ = writeln!(report, "     {label:<24} not run");
@@ -700,14 +710,16 @@ mod tests {
             .into_iter()
             .map(|id| RegistryEntry {
                 id,
-                state: RegistryState::Runnable(if id == StrategyId::OptipngV1 {
-                    Execution::External {
-                        executable: PathBuf::from("unused"),
-                        version: "7.9.1".to_owned(),
-                    }
-                } else {
-                    Execution::Embedded
-                }),
+                state: RegistryState::Runnable(
+                    if matches!(id, StrategyId::OptipngV1 | StrategyId::PngquantV1) {
+                        Execution::External {
+                            executable: PathBuf::from("unused"),
+                            version: "7.9.1".to_owned(),
+                        }
+                    } else {
+                        Execution::Embedded
+                    },
+                ),
             })
             .collect::<Vec<_>>();
         let attempted = Mutex::new(Vec::new());
@@ -731,6 +743,7 @@ mod tests {
                         StrategyResult::Warning("injected failure".to_owned())
                     }
                     StrategyId::OptipngV1 => StrategyResult::Candidate(winner.clone()),
+                    StrategyId::PngquantV1 => StrategyResult::NoCandidate,
                 }
             },
         );
@@ -775,6 +788,10 @@ mod tests {
                 id: StrategyId::OptipngV1,
                 state: RegistryState::Unavailable,
             },
+            RegistryEntry {
+                id: StrategyId::PngquantV1,
+                state: RegistryState::NotApplicable,
+            },
         ];
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -794,6 +811,7 @@ mod tests {
         assert!(stdout.contains("oxipng-libdeflate-v1     67 bytes"));
         assert!(stdout.contains("oxipng-zopfli-v1         disabled"));
         assert!(stdout.contains("optipng-v1               unavailable"));
+        assert!(stdout.contains("pngquant-v1              not applicable"));
     }
 
     #[test]
@@ -816,6 +834,7 @@ mod tests {
             AtomicUsize::new(0),
             AtomicUsize::new(0),
             AtomicUsize::new(0),
+            AtomicUsize::new(0),
         ];
         let mut arguments = arguments(output, vec![source]);
         arguments.jobs = 2;
@@ -835,7 +854,10 @@ mod tests {
                 counts[index].fetch_add(1, Ordering::Relaxed);
                 let current = active.fetch_add(1, Ordering::Relaxed) + 1;
                 maximum.fetch_max(current, Ordering::Relaxed);
-                if strategy.id != StrategyId::OptipngV1 {
+                if matches!(
+                    strategy.id,
+                    StrategyId::OxipngLibdeflateV1 | StrategyId::OxipngZopfliV1
+                ) {
                     barrier.wait();
                 }
                 active.fetch_sub(1, Ordering::Relaxed);
@@ -1127,7 +1149,7 @@ mod tests {
                     StrategyResult::Warning("injected warning".to_owned())
                 }
                 StrategyId::OxipngZopfliV1 => StrategyResult::Failure("injected fatal failure"),
-                StrategyId::OptipngV1 => unreachable!(),
+                StrategyId::OptipngV1 | StrategyId::PngquantV1 => unreachable!(),
             },
         );
 
@@ -1169,7 +1191,7 @@ mod tests {
             |_, _, strategy| match strategy.id {
                 StrategyId::OxipngLibdeflateV1 => StrategyResult::NoCandidate,
                 StrategyId::OxipngZopfliV1 => StrategyResult::Candidate(b"not a PNG".to_vec()),
-                StrategyId::OptipngV1 => unreachable!(),
+                StrategyId::OptipngV1 | StrategyId::PngquantV1 => unreachable!(),
             },
         );
 
@@ -1195,6 +1217,14 @@ mod tests {
         assert_eq!(
             format_summary(8, 1, 2, 3),
             "Summary: 8 succeeded, 1 failed, 2 warnings, 3 not processed\n"
+        );
+    }
+
+    #[test]
+    fn complete_registry_candidate_results_have_a_versioned_memory_bound() {
+        assert_eq!(
+            crate::limits::MAX_CANDIDATE_BYTES * StrategyId::ALL.len() as u64,
+            512 * 1024 * 1024
         );
     }
 

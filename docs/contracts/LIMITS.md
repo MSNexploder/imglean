@@ -1,6 +1,6 @@
-# Version 0.3 Resource Limits
+# Version 0.4 Resource Limits
 
-This contract records limits version `v3`. `src/limits.rs` is authoritative;
+This contract records limits version `v4`. `src/limits.rs` is authoritative;
 changing a value requires a limits-version and boundary-test review.
 
 ## Hard byte and structure limits
@@ -20,10 +20,11 @@ changing a value requires a limits-version and boundary-test review.
 Reads use inspected lengths or one-byte-over-limit detection. Arithmetic and
 allocations are checked. Inputs run sequentially. Up to the selected worker
 count of provider processes may run for the current input. Completed candidate
-buffers can coexist until all results are restored to registry order; with
-three strategies, their encoded bytes are bounded to 384 MiB in aggregate,
-plus the source and current winner. Provider address spaces remain outside this
-controller-owned byte accounting.
+buffers can coexist until all results are restored to registry order. The four
+registered strategies can therefore retain at most 512 MiB of encoded candidate
+bytes in aggregate, plus the source. Moving one of those buffers into the winner
+does not duplicate it. A registry-coupled test protects this effective bound.
+Provider address spaces remain outside this controller-owned byte accounting.
 
 ## Elapsed-time limits
 
@@ -32,6 +33,7 @@ controller-owned byte accounting.
 - OxiPNG's configured internal timeout: 55 seconds.
 - Embedded-worker controller deadline: 60 seconds.
 - External OptiPNG controller deadline: 60 seconds.
+- External pngquant controller deadline: 60 seconds.
 - Complete invocation: 15 minutes, checked before each input, before scheduling
   the strategy pool, before each queued strategy begins, and before publication.
 

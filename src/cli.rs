@@ -2,7 +2,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
 use crate::limits::{DEFAULT_STRATEGY_WORKERS, MAX_INPUTS, MAX_STRATEGY_WORKERS};
-use crate::strategy::{ProviderId, ProviderPath, Selection, StrategyId};
+use crate::strategy::{ProviderId, ProviderPath, Quality, Selection, StrategyId};
 
 const HELP: &str = concat!(
     "ImgLean ",
@@ -13,6 +13,7 @@ Usage: imglean --output OUTPUT_DIRECTORY INPUT...\n\n\
 Options:\n\
   --output DIRECTORY       Existing directory for separate output files\n\
   --jobs N                 Run up to N strategy workers (1-3; default: auto)\n\
+  --quality VALUE          lossless or 1-100 (default: lossless)\n\
   --disable-strategy ID    Disable a strategy; may be repeated\n\
   --require-strategy ID    Require an available strategy; may be repeated\n\
   --provider NAME PATH     Use and require a supported provider executable\n\
@@ -20,9 +21,9 @@ Options:\n\
   --version                Print version\n\
 \n\
 Strategy IDs (default order):\n\
-  oxipng-libdeflate-v1, oxipng-zopfli-v1, optipng-v1\n\
-Supported external provider:\n\
-  optipng 7.9.1\n"
+  oxipng-libdeflate-v1, oxipng-zopfli-v1, optipng-v1, pngquant-v1\n\
+Supported external providers:\n\
+  optipng 7.9.1; pngquant 3.0.2 and 3.0.3\n"
 );
 
 const VERSION: &str = concat!("imglean ", env!("CARGO_PKG_VERSION"), "\n");
@@ -62,6 +63,7 @@ where
     let mut inputs = Vec::new();
     let mut strategies = Selection::default();
     let mut jobs = None;
+    let mut quality = None;
     let mut options = true;
 
     while let Some(argument) = arguments.next() {
@@ -75,6 +77,7 @@ where
                 || !inputs.is_empty()
                 || strategies != Selection::default()
                 || jobs.is_some()
+                || quality.is_some()
                 || arguments.next().is_some()
             {
                 return usage("--help cannot be combined with other arguments");
@@ -87,6 +90,7 @@ where
                 || !inputs.is_empty()
                 || strategies != Selection::default()
                 || jobs.is_some()
+                || quality.is_some()
                 || arguments.next().is_some()
             {
                 return usage("--version cannot be combined with other arguments");
@@ -113,6 +117,14 @@ where
                 return usage("--jobs may be specified only once");
             }
             jobs = Some(parse_jobs(arguments.next())?);
+            continue;
+        }
+
+        if options && argument == OsStr::new("--quality") {
+            if quality.is_some() {
+                return usage("--quality may be specified only once");
+            }
+            quality = Some(parse_quality(arguments.next())?);
             continue;
         }
 
@@ -183,6 +195,7 @@ where
     {
         return usage("a strategy cannot be both disabled and required");
     }
+    strategies.quality = quality.unwrap_or_default();
 
     Ok(Parsed::Run(Arguments {
         output_directory,
@@ -190,6 +203,25 @@ where
         strategies,
         jobs: jobs.unwrap_or_else(default_jobs),
     }))
+}
+
+fn parse_quality(argument: Option<OsString>) -> Result<Quality, UsageError> {
+    let Some(argument) = argument else {
+        return usage("--quality requires lossless or an integer from 1 to 100");
+    };
+    let Some(value) = argument.to_str() else {
+        return usage("--quality requires an ASCII value");
+    };
+    if value == "lossless" {
+        return Ok(Quality::Lossless);
+    }
+    let quality = value.parse::<u8>().map_err(|_| UsageError {
+        message: "--quality requires lossless or an integer from 1 to 100".to_owned(),
+    })?;
+    if !(1..=100).contains(&quality) {
+        return usage("--quality requires lossless or an integer from 1 to 100");
+    }
+    Ok(Quality::Numeric(quality))
 }
 
 fn parse_jobs(argument: Option<OsString>) -> Result<usize, UsageError> {
@@ -359,6 +391,25 @@ mod tests {
             panic!("expected runnable arguments");
         };
         assert_eq!(arguments.jobs, 3);
+    }
+
+    #[test]
+    fn parses_and_validates_quality() {
+        let Parsed::Run(arguments) =
+            parse_strings(&["imglean", "--quality", "80", "--output", "out", "a.png"]).unwrap()
+        else {
+            panic!("expected runnable arguments");
+        };
+        assert_eq!(arguments.strategies.quality, Quality::Numeric(80));
+
+        for value in ["0", "101", "high"] {
+            assert_eq!(
+                parse_strings(&["imglean", "--quality", value, "--output", "out", "a.png",])
+                    .unwrap_err()
+                    .message(),
+                "--quality requires lossless or an integer from 1 to 100"
+            );
+        }
     }
 
     #[test]
