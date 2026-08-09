@@ -94,6 +94,29 @@ fn help_and_version_use_status_zero() {
     }
 }
 
+#[test]
+fn required_missing_provider_fails_before_output_creation() {
+    let directory = TestDirectory::new();
+    let output_directory = directory.create_directory("out");
+    let source = directory.path.join("source.png");
+    fs::write(&source, compressible_png()).unwrap();
+
+    let result = Command::new(env!("CARGO_BIN_EXE_imglean"))
+        .arg("--provider")
+        .arg("optipng")
+        .arg(directory.path.join("missing-optipng"))
+        .arg("--output")
+        .arg(&output_directory)
+        .arg(&source)
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(1));
+    assert!(result.stdout.is_empty());
+    assert_eq!(fs::read_dir(output_directory).unwrap().count(), 0);
+    assert!(stderr(&result).contains("provider preflight failed"));
+}
+
 fn run(output_directory: &Path, inputs: &[&Path]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_imglean"))
         .arg("--output")

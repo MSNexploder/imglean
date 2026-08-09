@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-pub const LIMITS_VERSION: &str = "v1";
+pub const LIMITS_VERSION: &str = "v2";
 
 pub const MAX_INPUTS: usize = 128;
 pub const MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
@@ -18,8 +18,10 @@ pub const MAX_CHUNKS: usize = 4_096;
 pub const MAX_ANCILLARY_BYTES: usize = 16 * 1024 * 1024;
 
 pub const VALIDATION_TIMEOUT: Duration = Duration::from_secs(5);
-pub const PROVIDER_TIMEOUT: Duration = Duration::from_secs(55);
-pub const WORKER_TIMEOUT: Duration = Duration::from_secs(60);
+pub const PROVIDER_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(2);
+pub const OXIPNG_TIMEOUT: Duration = Duration::from_secs(55);
+pub const EMBEDDED_WORKER_TIMEOUT: Duration = Duration::from_secs(60);
+pub const OPTIPNG_TIMEOUT: Duration = Duration::from_secs(60);
 pub const INVOCATION_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 #[cfg(test)]
@@ -28,8 +30,9 @@ mod tests {
 
     #[test]
     fn provider_timeout_leaves_controller_cleanup_time() {
-        assert!(PROVIDER_TIMEOUT < WORKER_TIMEOUT);
-        assert!(WORKER_TIMEOUT < INVOCATION_TIMEOUT);
+        assert!(OXIPNG_TIMEOUT < EMBEDDED_WORKER_TIMEOUT);
+        assert!(EMBEDDED_WORKER_TIMEOUT < INVOCATION_TIMEOUT);
+        assert!(OPTIPNG_TIMEOUT < INVOCATION_TIMEOUT);
     }
 
     #[test]

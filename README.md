@@ -1,75 +1,83 @@
 # ImgLean
 
-ImgLean is a local command-line tool that makes supported PNG images leaner.
-Its built-in workflow is offline, requires no separately installed optimizer,
-and independently validates every OxiPNG result before it can win. The validated
-source is always a candidate, so a successful output is never larger than its
-source.
+ImgLean is a local CLI that runs every applicable PNG optimization strategy and
+writes the smallest candidate that passes its bounded validation gate. The
+validated source is always the first candidate, so a successful output is never
+larger than its source. Sources and existing destinations are never replaced.
 
-Version 0.1 is implemented in source. The three target-specific release
-artifacts are not published or considered qualified until their native CI gates
-pass on 64-bit macOS, Linux, and Windows.
+Version 0.2 is implemented in source. Target-specific 64-bit macOS, Linux, and
+Windows artifacts remain unpublished and unqualified until their native release
+gates pass.
 
 ## Use
 
 The output directory must already exist, support same-directory hard links, and
-not contain any requested destination:
+not contain a requested destination:
 
 ```sh
 imglean --output ./optimized photo.png icon.png
 ```
 
-ImgLean preflights the complete batch before creating anything. It retains each
-original basename, rejects ambiguous or unsafe mappings, captures and validates
-each source, runs the fixed OxiPNG strategy in an isolated worker process, and
-publishes the smallest accepted bytes without replacing a destination. Sources
-are never written or replaced.
+The default ordered strategy set is:
 
-Version 0.1 accepts a deliberately strict non-animated, non-interlaced PNG
-subset: 8-bit grayscale, truecolor, grayscale-alpha, and truecolor-alpha, plus
-1/2/4/8-bit indexed color. It preserves accepted ancillary chunks byte-for-byte
-around the IDAT group and refuses APNG, 16-bit samples, ICC, Exif, XMP/C2PA,
-compressed/international text, and unknown chunks. See the
-[PNG contract](docs/contracts/PNG.md) for the exact subset.
+1. embedded `oxipng-libdeflate-v1`;
+2. embedded `oxipng-zopfli-v1`; and
+3. external `optipng-v1` when OptiPNG 7.9.1 is found on `PATH`.
+
+All compatible embedded strategies are enabled by default. An automatically
+missing or incompatible external provider is skipped. Strategy controls are
+explicit and repeatable:
+
+```sh
+imglean --disable-strategy oxipng-zopfli-v1 --output ./optimized photo.png
+imglean --require-strategy optipng-v1 --output ./optimized photo.png
+imglean --provider optipng /absolute/path/to/optipng --output ./optimized photo.png
+```
+
+`--provider` both selects the executable and requires its adapter. ImgLean never
+downloads, installs, or updates external providers. Run `imglean --help` for the
+complete CLI surface.
+
+Version 0.2 accepts bounded static PNGs in every standard color-type and
+bit-depth combination, including Adam7. It verifies container checksums and a
+complete decode, requires candidate dimensions to match, and refuses APNG,
+`caBX`, and XMP in PNG text chunks. Other accepted ancillary data is opaque.
+ImgLean trusts each audited, pinned strategy to honor its lossless and metadata
+configuration; it does not independently compare pixels or ancillary payloads.
+See the [PNG contract](docs/contracts/PNG.md) for the exact boundary.
 
 Exit statuses are `0` for clean success, `3` when all outputs succeed despite
 an optimizer warning, `1` for processing or reporting failure, and `2` for
-invalid CLI usage. Human-readable per-input results go to standard output;
-warnings, errors, and the invocation summary go to standard error.
+invalid CLI usage. Per-input results, including the winning strategy, go to
+standard output. Provider records, warnings, errors, and the invocation summary
+go to standard error.
 
 ## Build and validate
 
-ImgLean uses mise to install the selected stable Rust toolchain and pinned
-release-audit tools:
+ImgLean uses mise to select the Rust toolchain and release-audit tools:
 
 ```sh
 mise install
 mise run check
 ```
 
-`mise run check` verifies formatting, runs Clippy for every target and feature
+`mise run check` verifies formatting, runs Clippy for all targets and features
 with warnings denied, and runs the complete locked test suite. Release work also
-runs:
+runs `mise run audit`, `mise run notices`, and `mise run sbom`.
 
-```sh
-mise run audit
-mise run notices
-mise run sbom
-```
-
-The release workflows build and test natively on the three documented targets,
-generate notices and an SPDX 2.3 SBOM, smoke-test the release executable, and
-package it with an input manifest, dependency inventory, license, and checksums.
+CI executes both embedded strategies directly and through the controller on all
+release targets. Separate native jobs build checksum-pinned OptiPNG 7.9.1,
+exercise automatic discovery, and require a real external-provider reduction.
 
 ## Documentation
 
-- [SCOPE.md](SCOPE.md) defines the product outcomes and milestone boundary.
-- [ARCHITECTURE.md](ARCHITECTURE.md) defines the component boundaries and flow.
+- [SCOPE.md](SCOPE.md) defines the product and version 0.2 boundary.
+- [ARCHITECTURE.md](ARCHITECTURE.md) defines components and data flow.
 - The [input](docs/contracts/INPUT_AND_BATCH.md),
-  [PNG](docs/contracts/PNG.md), [provider](docs/contracts/PROVIDER_EXECUTION.md),
+  [PNG](docs/contracts/PNG.md),
+  [provider](docs/contracts/PROVIDER_EXECUTION.md),
   [output](docs/contracts/OUTPUT.md), and
-  [resource-limit](docs/contracts/LIMITS.md) contracts define exact version 0.1
-  behavior.
+  [limits](docs/contracts/LIMITS.md) contracts define exact behavior.
 - [docs/RELEASE.md](docs/RELEASE.md) defines target qualification and artifact
   contents.
 

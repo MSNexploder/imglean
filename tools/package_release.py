@@ -36,9 +36,16 @@ def main() -> int:
     parser.add_argument("--allow-dirty", action="store_true")
     args = parser.parse_args()
     if args.target not in RELEASE_TARGETS:
-        parser.error(f"unsupported version 0.1 release target: {args.target}")
+        parser.error(f"unsupported version 0.2 release target: {args.target}")
 
-    required = [args.binary, args.sbom, args.notices, ROOT / "Cargo.lock", ROOT / "LICENSE.md"]
+    required = [
+        args.binary,
+        args.sbom,
+        args.notices,
+        ROOT / "Cargo.lock",
+        ROOT / "LICENSE.md",
+        ROOT / "ci/optipng-version.txt",
+    ]
     for path in required:
         if not path.is_file():
             parser.error(f"required release input is missing: {path}")
@@ -166,7 +173,7 @@ def release_manifest(
         if node["id"] in identities
     }
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "package": "imglean",
         "version": tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"],
         "source_commit": run(["git", "rev-parse", "HEAD"]),
@@ -182,7 +189,27 @@ def release_manifest(
             "oxipng": versions.get("oxipng"),
             "libdeflater": versions.get("libdeflater"),
             "libdeflate-sys": versions.get("libdeflate-sys"),
+            "zopfli": versions.get("zopfli"),
         },
+        "strategy_registry": [
+            {
+                "id": "oxipng-libdeflate-v1",
+                "execution": "embedded",
+                "settings": "OxiPNG 10.1.1, pinned filters, libdeflater level 11",
+            },
+            {
+                "id": "oxipng-zopfli-v1",
+                "execution": "embedded",
+                "settings": "OxiPNG 10.1.1, pinned filters, Zopfli 15 iterations",
+            },
+            {
+                "id": "optipng-v1",
+                "execution": "external-optional",
+                "provider": "optipng",
+                "supported_version": (ROOT / "ci/optipng-version.txt").read_text(encoding="ascii").strip(),
+                "arguments": ["-quiet", "-o2", "-out", "CANDIDATE", "--", "INPUT"],
+            },
+        ],
         "build_environment": {
             "platform": platform.platform(),
             "packager": f"Python {platform.python_version()}",
@@ -304,7 +331,7 @@ def smoke_release_binary(binary: Path) -> None:
         output = directory / "output"
         output.mkdir()
         shutil.copyfile(
-            ROOT / "tests/corpus/png/v1/accepted/oxipng-reduction.png",
+            ROOT / "tests/corpus/png/v2/accepted/oxipng-reduction.png",
             source,
         )
         subprocess.run(

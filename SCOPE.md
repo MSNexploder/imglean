@@ -1,87 +1,103 @@
 # ImgLean Scope
 
 > [!IMPORTANT]
-> The version 0.1 workflow is implemented in source. Target-specific release
-> artifacts remain unpublished and unqualified until their native gates pass.
+> Version 0.2 is implemented in source. Target-specific release artifacts remain
+> unpublished and unqualified until their native gates pass.
 
 ## Product definition
 
-ImgLean is for command-line users who want trustworthy local image-size reduction without installing separate optimizer tools. Its built-in workflow attempts to reduce the encoded byte length of supported images without violating the active acceptance policy or trusting optimizer claims, and no component of that workflow initiates network requests or remote-service calls. For each input, the validated original participates as the baseline, and ImgLean writes the candidate with the smallest encoded byte length among the baseline and results actually produced by enabled strategies applicable to that input. Because the baseline competes, every output ImgLean commits has an encoded byte length no larger than the validated source.
+ImgLean is for command-line users who want trustworthy local PNG size reduction
+without assembling an optimizer toolchain. For each input, it runs every enabled
+applicable strategy and writes the smallest candidate accepted under one common
+policy. The validated original participates as the first candidate, so every
+successful output is no larger than its source.
 
-Candidates may compete for one input only when evaluated under the same declared acceptance policy.
-
-Given an accepted candidate set, ImgLean selects the winner deterministically. Each release artifact is a target-specific executable requiring no separately installed optimizer or runtime. The default distribution is permissively licensed. ImageOptim motivates the desired low-friction experience, but the independently stated behavior in this document is authoritative.
+The embedded workflow is offline and ships in one target-specific executable.
+Supported external executables may augment it when already installed; ImgLean
+does not download or manage them. The default distribution is permissively
+licensed. ImageOptim motivates the low-friction experience, but this document is
+the authoritative boundary.
 
 ## Vocabulary
 
-- **Acceptance policy:** the equivalence or quality requirements applied to every candidate competing for one input
-- **Baseline:** the validated source capture offered as the unchanged candidate
+- **Acceptance policy:** output requirements applied to every candidate for one input
+- **Baseline:** the validated source capture offered unchanged
 - **Provider:** an optimizer implementation, such as OxiPNG
-- **Strategy:** one provider with an explicit option set
-- **Candidate:** the baseline or a result produced by a strategy
-- **Winner:** the accepted candidate with the smallest encoded byte length in one input's candidate set
+- **Strategy:** one provider with a versioned explicit option set
+- **Candidate:** the baseline or a strategy result
+- **Winner:** the first smallest accepted candidate in registry order
 
-## Enduring product invariants
+## Enduring invariants
 
-- Bound and validate every source, and independently validate every provider-produced candidate before comparing sizes.
-- For each processed input, attempt every enabled applicable strategy within declared resource limits.
-- Evaluate every candidate for one input under the same active acceptance policy.
-- Include the validated source as the baseline so a failed optimizer or invalid candidate cannot eliminate an otherwise valid result.
-- Given an accepted candidate set, select the candidate with the smallest encoded byte length deterministically.
-- Require deliberate user selection of any acceptance policy that may reduce image fidelity.
-- Publish only complete validated results through an explicit output mode; never replace an existing destination.
-- Clearly report each input's outcome and the overall invocation outcome.
-- Keep built-in strategy definitions explicit, versioned, and auditable.
-- Keep the complete built-in workflow offline: no component initiates network requests or remote-service calls.
-- Keep each default workflow release in one target-specific executable requiring no separately installed optimizer or runtime, with a permissively licensed distribution.
+- Bound and independently validate every source and provider candidate.
+- Attempt every enabled applicable strategy once for each processed input.
+- Include the source baseline and use stable order to break equal-size ties.
+- Never let a provider select, publish, or overwrite a destination.
+- Publish only a complete validated result and never replace an existing entry.
+- Report every input outcome and the invocation outcome.
+- Enable compatible embedded strategies by default.
+- Keep strategy identifiers, order, provider versions, options, and limits
+  explicit, versioned, tested, and recorded in release artifacts.
+- Keep the embedded workflow offline and permissively redistributable.
+- Require deliberate selection before enabling any future fidelity-reducing
+  policy.
 
-These are product outcomes. Architecture, format, input, output, provider, reporting, filesystem, testing, and release mechanisms belong in their owning documents and implementations.
+## Version 0.2
 
-## Version 0.1
+Version 0.2 supports explicit static PNG inputs and a required separate output
+directory on 64-bit macOS, Linux, and Windows release targets. It accepts every
+standard static PNG color-type and bit-depth combination, including Adam7,
+within documented byte, dimension, pixel, allocation, chunk, and elapsed-time
+limits. APNG, C2PA `caBX`, standard XMP text, and adjacent `.c2pa` sidecars are
+refused.
 
-Version 0.1 is a supported, releasable CLI for a deliberately narrow slice of the core optimization race:
+The controller performs a basic candidate gate: signature and chunk checksums,
+bounded complete decode, permitted static animation class, matching dimensions,
+and the explicit C2PA/XMP refusal. Other ancillary data is opaque. ImgLean does
+not compare decoded samples or ancillary payload identity; losslessness and
+metadata preservation are properties of the audited strategy configuration.
 
-- 64-bit macOS, Linux, and Windows release targets using common filesystem operations;
-- a limited, non-animated PNG subset under strict lossless equivalence;
-- the validated source baseline and one fixed built-in OxiPNG strategy; and
-- explicit input files with separate, non-overwriting outputs.
+The ordered registry is:
 
-Version 0.1 never writes source contents or replaces source directory entries. It checks the complete input/output mapping before publishing any output. After that check succeeds, each input is processed and committed independently, so a later per-input failure does not roll back earlier outputs. Each complete output is published by creating the destination as a hard link to a prepared temporary file in the output directory. A destination that exists at the publication point is never replaced.
+1. OxiPNG 10.1.1 with libdeflater level 11, embedded;
+2. OxiPNG 10.1.1 with pinned Zopfli settings, embedded; and
+3. OptiPNG 7.9.1 at optimization level 2, external and optional.
 
-The portable filesystem contract protects normal local CLI operation and detects ordinary concurrent source changes. It does not claim protection against an adversary that replaces path components while ImgLean runs, identical behavior across filesystem implementations, or support for output filesystems without hard links. Such failures are reported without publishing a partial destination.
+Both embedded strategies are enabled by default. OptiPNG is discovered on
+`PATH`, or supplied with `--provider optipng PATH`, and is enabled when its exact
+supported version is available. Automatic absence or incompatibility is normal;
+an explicitly required or configured provider that is unavailable or
+incompatible fails preflight before output creation. Provider execution failure
+warns, excludes that candidate, and leaves the baseline and other strategies in
+the race.
 
-Strict lossless equivalence preserves decoded image content and embedded payloads accepted by the PNG format policy. Encoding bytes may change, and source filesystem metadata is outside the guarantee. Every supported valid input enters the fixed baseline-versus-OxiPNG race. For each successfully processed input, ImgLean commits the smallest accepted candidate; when no smaller valid optimizer result exists, it commits the validated source image bytes unchanged.
+Complete input/output mapping preflight precedes all publication. Inputs are
+then processed independently and sequentially. A later per-input failure does
+not roll back earlier outputs. Publication uses a non-replacing hard link to a
+complete validated temporary file in the output directory.
 
-The milestone is complete when:
+## Non-goals and future directions
 
-- the complete validated baseline-versus-OxiPNG race works end to end;
-- every enduring product invariant applicable to the fixed strict-lossless, built-in-provider workflow is demonstrated; and
-- at least one supported input produces a validated OxiPNG size reduction.
-
-## Possible future directions—not commitments
-
-- Additional architectures, release targets, and filesystems without hard-link support
-- Additional image formats and format-specific equivalence rules
-- Explicit lossy quality policies for same-format optimization
-- Format conversion
-- Additional presets, strategies, and user-configurable resource limits
-- Directory traversal, stream and pipeline workflows, dry-run, and machine-readable reporting
-- Explicitly selected in-place operation and broader path handling
-- Optional external providers or extensions
+Version 0.2 does not provide directory traversal, standard-input pipelines,
+in-place operation, lossy optimization, format conversion, APNG processing, a
+general plugin ABI, provider downloads, remote services, or support for output
+filesystems without same-directory hard links. Additional formats, providers,
+architectures, and explicit fidelity policies require their own reviewed
+contracts.
 
 ## Document ownership
 
-[ARCHITECTURE.md](ARCHITECTURE.md) owns stable component boundaries. The focused
-[input and batch](docs/contracts/INPUT_AND_BATCH.md),
-[PNG](docs/contracts/PNG.md), [provider](docs/contracts/PROVIDER_EXECUTION.md),
+[ARCHITECTURE.md](ARCHITECTURE.md) owns stable component boundaries. Detailed
+[input](docs/contracts/INPUT_AND_BATCH.md), [PNG](docs/contracts/PNG.md),
+[provider](docs/contracts/PROVIDER_EXECUTION.md),
 [output](docs/contracts/OUTPUT.md), and [limits](docs/contracts/LIMITS.md)
-contracts own detailed implemented behavior. [docs/RELEASE.md](docs/RELEASE.md)
-owns target qualification and artifact contents.
-
-## Non-goals
-
-ImgLean is not a general image editor, image CDN, hosted service, package manager, or replacement for ImageMagick's broad conversion surface. It does not download third-party providers or circumvent their licenses.
+contracts own implemented behavior. [docs/RELEASE.md](docs/RELEASE.md) owns
+target qualification and artifact contents.
 
 ## Licensing boundary
 
-ImgLean is licensed under Apache-2.0. The default binary may include only dependencies approved for permissive redistribution after auditing direct, transitive, vendored, and native code. GPL, AGPL, proprietary, and redistribution-restricted providers are never linked into the default binary. Any future commercially licensed integration must use a separate distribution or an external-provider boundary.
+ImgLean is Apache-2.0. The default binary may include only dependencies approved
+for permissive redistribution. GPL, AGPL, proprietary, source-incompatible, and
+redistribution-restricted providers are not linked into it. External providers
+are separately installed software and are excluded from the bundled dependency
+inventory and SBOM.

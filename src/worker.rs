@@ -1,27 +1,28 @@
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
+use std::num::NonZeroU64;
 use std::path::Path;
-use std::process::{Command, Stdio};
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::process::Command;
 
-use oxipng::{Deflater, FilterStrategy, Options, StripChunks, indexset};
+use oxipng::{Deflater, FilterStrategy, Options, StripChunks, ZopfliOptions, indexset};
 
 use crate::artifacts::Artifacts;
 use crate::diagnostics::escape_worker_text;
 use crate::limits::{
-    LIMITS_VERSION, MAX_CANDIDATE_BYTES, MAX_DIAGNOSTIC_BYTES, MAX_RECONSTRUCTED_BYTES,
-    MAX_SOURCE_BYTES, MAX_TEMPORARY_BYTES, PROVIDER_TIMEOUT, WORKER_TIMEOUT,
+    EMBEDDED_WORKER_TIMEOUT, LIMITS_VERSION, MAX_CANDIDATE_BYTES, MAX_RECONSTRUCTED_BYTES,
+    MAX_SOURCE_BYTES, MAX_TEMPORARY_BYTES, OPTIPNG_TIMEOUT, OXIPNG_TIMEOUT,
 };
 use crate::png::validate_source;
+use crate::process::{self, Capture};
+use crate::strategy::{Execution, Strategy, StrategyId};
 
-const WORKER_ROLE: &str = "--imglean-internal-worker-v1";
-const OXIPNG_STRATEGY: &str = "oxipng-v1";
+const WORKER_ROLE: &str = "--imglean-internal-worker-v2";
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum StrategyResult {
     Candidate(Vec<u8>),
+    NoCandidate,
     Warning(String),
     Failure(&'static str),
 }
@@ -36,7 +37,11 @@ pub fn try_run(arguments: &[OsString]) -> Option<i32> {
     Some(run_private(arguments))
 }
 
-pub fn run_strategy(artifacts: &mut Artifacts, source: &[u8]) -> StrategyResult {
+pub fn run_strategy(
+    artifacts: &mut Artifacts,
+    source: &[u8],
+    strategy: &Strategy,
+) -> StrategyResult {
     let maximum_live_bytes = (source.len() as u64)
         .checked_mul(2)
         .and_then(|bytes| bytes.checked_add(MAX_CANDIDATE_BYTES));
@@ -75,77 +80,47 @@ pub fn run_strategy(artifacts: &mut Artifacts, source: &[u8]) -> StrategyResult 
         }
     };
 
-    let executable = match std::env::current_exe() {
-        Ok(path) => path,
-        Err(_) => {
+    let command = match strategy_command(strategy, &private_input, &candidate_path) {
+        Ok(command) => command,
+        Err(message) => {
             return cleanup_failure_or(
                 artifacts,
                 &[&private_input, &candidate_path],
-                StrategyResult::Warning("cannot identify the current executable".to_owned()),
+                StrategyResult::Warning(message.to_owned()),
             );
         }
     };
-    let mut child = match Command::new(executable)
-        .arg(WORKER_ROLE)
-        .arg(OXIPNG_STRATEGY)
-        .arg(LIMITS_VERSION)
-        .arg(&private_input)
-        .arg(&candidate_path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(_) => {
+    let timeout = match strategy.execution {
+        Execution::Embedded => EMBEDDED_WORKER_TIMEOUT,
+        Execution::External { .. } => OPTIPNG_TIMEOUT,
+    };
+    let output = match process::run(command, timeout) {
+        Ok(output) => output,
+        Err(()) => {
             return cleanup_failure_or(
                 artifacts,
                 &[&private_input, &candidate_path],
-                StrategyResult::Warning("cannot start the provider worker".to_owned()),
+                StrategyResult::Warning(format!("cannot start {strategy} worker")),
             );
         }
     };
 
-    let stdout = child.stdout.take().map(spawn_capture);
-    let stderr = child.stderr.take().map(spawn_capture);
-    let started = Instant::now();
-    let (status, timed_out) = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break (Some(status), false),
-            Ok(None) if started.elapsed() < WORKER_TIMEOUT => {
-                thread::sleep(Duration::from_millis(10));
-            }
-            Ok(None) => {
-                let _ = child.kill();
-                break (child.wait().ok(), true);
-            }
-            Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break (None, false);
-            }
-        }
-    };
-    let stdout = join_capture(stdout);
-    let stderr = join_capture(stderr);
-
-    let mut result = if timed_out {
-        StrategyResult::Warning("OxiPNG exceeded the worker timeout".to_owned())
-    } else if status.is_none_or(|status| !status.success()) {
-        let detail = diagnostic_detail(&stderr, &stdout);
+    let mut result = if output.timed_out {
+        StrategyResult::Warning(format!("{strategy} exceeded the worker timeout"))
+    } else if output.status.is_none_or(|status| !status.success()) {
+        let detail = diagnostic_detail(&output.stderr, &output.stdout);
         StrategyResult::Warning(match detail {
-            Some(detail) => format!("OxiPNG worker failed: {detail}"),
-            None => "OxiPNG worker failed".to_owned(),
+            Some(detail) => format!("{strategy} worker failed: {detail}"),
+            None => format!("{strategy} worker failed"),
         })
-    } else if stdout
-        .as_ref()
-        .is_some_and(|capture| !capture.bytes.is_empty())
-    {
-        StrategyResult::Warning("OxiPNG worker produced unexpected standard output".to_owned())
-    } else if stderr.as_ref().is_some_and(|capture| capture.truncated)
-        || stdout.as_ref().is_some_and(|capture| capture.truncated)
-    {
-        StrategyResult::Warning("OxiPNG worker diagnostics exceeded the byte limit".to_owned())
+    } else if matches!(strategy.execution, Execution::Embedded) && !output.stdout.bytes.is_empty() {
+        StrategyResult::Warning(format!(
+            "{strategy} worker produced unexpected standard output"
+        ))
+    } else if output.stderr.truncated || output.stdout.truncated {
+        StrategyResult::Warning(format!(
+            "{strategy} worker diagnostics exceeded the byte limit"
+        ))
     } else if !private_input_matches(&private_input, source) {
         StrategyResult::Failure("the private provider input changed during execution")
     } else {
@@ -156,13 +131,50 @@ pub fn run_strategy(artifacts: &mut Artifacts, source: &[u8]) -> StrategyResult 
     result
 }
 
+fn strategy_command(
+    strategy: &Strategy,
+    private_input: &Path,
+    candidate_path: &Path,
+) -> Result<Command, &'static str> {
+    match &strategy.execution {
+        Execution::Embedded => {
+            let executable =
+                std::env::current_exe().map_err(|_| "cannot identify the current executable")?;
+            let mut command = Command::new(executable);
+            command
+                .arg(WORKER_ROLE)
+                .arg(strategy.id.as_str())
+                .arg(LIMITS_VERSION)
+                .arg(private_input)
+                .arg(candidate_path);
+            Ok(command)
+        }
+        Execution::External { executable, .. } if strategy.id == StrategyId::OptipngV1 => {
+            let mut command = Command::new(executable);
+            command
+                .arg("-quiet")
+                .arg("-o2")
+                .arg("-out")
+                .arg(candidate_path)
+                .arg("--")
+                .arg(private_input);
+            Ok(command)
+        }
+        Execution::External { .. } => Err("unsupported external strategy"),
+    }
+}
+
 fn run_private(arguments: &[OsString]) -> i32 {
-    if arguments.len() != 6
-        || arguments[2] != OsStr::new(OXIPNG_STRATEGY)
-        || arguments[3] != OsStr::new(LIMITS_VERSION)
-    {
+    if arguments.len() != 6 || arguments[3] != OsStr::new(LIMITS_VERSION) {
         return private_error("invalid private worker protocol");
     }
+    let Some(strategy) = arguments[2]
+        .to_str()
+        .and_then(StrategyId::parse)
+        .filter(|strategy| StrategyId::EMBEDDED.contains(strategy))
+    else {
+        return private_error("invalid private worker strategy");
+    };
     let input = Path::new(&arguments[4]);
     let candidate = Path::new(&arguments[5]);
     let bytes = match read_bounded(input, MAX_SOURCE_BYTES) {
@@ -172,7 +184,7 @@ fn run_private(arguments: &[OsString]) -> i32 {
     if validate_source(&bytes).is_err() {
         return private_error("private provider input failed PNG validation");
     }
-    let options = oxipng_options();
+    let options = oxipng_options(strategy);
     let optimized = match oxipng::optimize_from_memory(&bytes, &options) {
         Ok(bytes) => bytes,
         Err(_) => return private_error("OxiPNG could not optimize the private input"),
@@ -198,7 +210,16 @@ fn run_private(arguments: &[OsString]) -> i32 {
     0
 }
 
-fn oxipng_options() -> Options {
+fn oxipng_options(strategy: StrategyId) -> Options {
+    let deflater = match strategy {
+        StrategyId::OxipngLibdeflateV1 => Deflater::Libdeflater { compression: 11 },
+        StrategyId::OxipngZopfliV1 => Deflater::Zopfli(ZopfliOptions {
+            iteration_count: NonZeroU64::new(15).expect("15 is nonzero"),
+            iterations_without_improvement: NonZeroU64::new(u64::MAX).expect("u64::MAX is nonzero"),
+            maximum_block_splits: 15,
+        }),
+        StrategyId::OptipngV1 => unreachable!("OptiPNG does not use OxiPNG options"),
+    };
     Options {
         fix_errors: false,
         force: true,
@@ -217,9 +238,9 @@ fn oxipng_options() -> Options {
         idat_recoding: true,
         scale_16: false,
         strip: StripChunks::None,
-        deflater: Deflater::Libdeflater { compression: 11 },
+        deflater,
         fast_evaluation: true,
-        timeout: Some(PROVIDER_TIMEOUT),
+        timeout: Some(OXIPNG_TIMEOUT),
         max_decompressed_size: Some(MAX_RECONSTRUCTED_BYTES),
     }
 }
@@ -227,12 +248,19 @@ fn oxipng_options() -> Options {
 fn read_candidate(path: &Path) -> StrategyResult {
     match read_bounded(path, MAX_CANDIDATE_BYTES) {
         Ok(bytes) => StrategyResult::Candidate(bytes),
+        Err("worker file is missing") => StrategyResult::NoCandidate,
         Err(message) => StrategyResult::Warning(message.to_owned()),
     }
 }
 
 fn read_bounded(path: &Path, maximum: u64) -> Result<Vec<u8>, &'static str> {
-    let metadata = fs::symlink_metadata(path).map_err(|_| "cannot inspect the worker file")?;
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            "worker file is missing"
+        } else {
+            "cannot inspect the worker file"
+        }
+    })?;
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         return Err("worker file is not a regular non-symlink file");
     }
@@ -278,44 +306,10 @@ fn cleanup_failure_or(
     }
 }
 
-#[derive(Debug)]
-struct Captured {
-    bytes: Vec<u8>,
-    truncated: bool,
-}
-
-fn spawn_capture(mut reader: impl Read + Send + 'static) -> JoinHandle<Captured> {
-    thread::spawn(move || {
-        let mut retained = Vec::new();
-        let mut buffer = [0u8; 8 * 1024];
-        let mut truncated = false;
-        loop {
-            match reader.read(&mut buffer) {
-                Ok(0) | Err(_) => break,
-                Ok(length) => {
-                    let available = MAX_DIAGNOSTIC_BYTES.saturating_sub(retained.len());
-                    let to_keep = available.min(length);
-                    retained.extend_from_slice(&buffer[..to_keep]);
-                    truncated |= to_keep != length;
-                }
-            }
-        }
-        Captured {
-            bytes: retained,
-            truncated,
-        }
-    })
-}
-
-fn join_capture(handle: Option<JoinHandle<Captured>>) -> Option<Captured> {
-    handle.and_then(|handle| handle.join().ok())
-}
-
-fn diagnostic_detail(stderr: &Option<Captured>, stdout: &Option<Captured>) -> Option<String> {
-    stderr
-        .as_ref()
-        .filter(|capture| !capture.bytes.is_empty())
-        .or_else(|| stdout.as_ref().filter(|capture| !capture.bytes.is_empty()))
+fn diagnostic_detail(stderr: &Capture, stdout: &Capture) -> Option<String> {
+    [stderr, stdout]
+        .into_iter()
+        .find(|capture| !capture.bytes.is_empty())
         .map(|capture| {
             let mut escaped = escape_worker_text(&capture.bytes);
             if capture.truncated {
@@ -345,9 +339,18 @@ mod tests {
 
     #[test]
     fn options_pin_every_policy_boundary() {
-        let options = oxipng_options();
+        let options = oxipng_options(StrategyId::OxipngLibdeflateV1);
         assert!(!options.fix_errors);
         assert!(options.force);
+        assert_eq!(
+            options.filters,
+            indexset! {
+                FilterStrategy::NONE,
+                FilterStrategy::SUB,
+                FilterStrategy::Entropy,
+                FilterStrategy::Bigrams,
+            }
+        );
         assert_eq!(options.interlace, None);
         assert!(!options.optimize_alpha);
         assert!(!options.bit_depth_reduction);
@@ -357,38 +360,97 @@ mod tests {
         assert!(options.idat_recoding);
         assert!(!options.scale_16);
         assert_eq!(options.strip, StripChunks::None);
-        assert_eq!(options.timeout, Some(PROVIDER_TIMEOUT));
+        assert!(options.fast_evaluation);
+        assert_eq!(options.timeout, Some(OXIPNG_TIMEOUT));
         assert_eq!(options.max_decompressed_size, Some(MAX_RECONSTRUCTED_BYTES));
+        assert_eq!(options.deflater, Deflater::Libdeflater { compression: 11 });
+
+        let zopfli = oxipng_options(StrategyId::OxipngZopfliV1);
+        assert_eq!(
+            zopfli.deflater,
+            Deflater::Zopfli(ZopfliOptions {
+                iteration_count: NonZeroU64::new(15).unwrap(),
+                iterations_without_improvement: NonZeroU64::new(u64::MAX).unwrap(),
+                maximum_block_splits: 15,
+            })
+        );
     }
 
     #[test]
-    fn fixed_strategy_produces_a_candidate() {
+    fn embedded_strategies_produce_candidates() {
         let directory = test_directory();
         let source = compressible_png();
-        let input = directory.join("input.png");
-        let candidate_path = directory.join("candidate.png");
-        fs::write(&input, &source).unwrap();
-        let arguments = [
-            OsString::from("imglean"),
-            OsString::from(WORKER_ROLE),
-            OsString::from(OXIPNG_STRATEGY),
-            OsString::from(LIMITS_VERSION),
-            input.into_os_string(),
-            candidate_path.clone().into_os_string(),
-        ];
-        assert_eq!(run_private(&arguments), 0);
-        let candidate = fs::read(candidate_path).unwrap();
-        assert!(!candidate.is_empty());
-        assert!(candidate.len() <= source.len());
+        for strategy in StrategyId::EMBEDDED {
+            let input = directory.join(format!("{}-input.png", strategy.as_str()));
+            let candidate_path = directory.join(format!("{}-candidate.png", strategy.as_str()));
+            fs::write(&input, &source).unwrap();
+            let arguments = [
+                OsString::from("imglean"),
+                OsString::from(WORKER_ROLE),
+                OsString::from(strategy.as_str()),
+                OsString::from(LIMITS_VERSION),
+                input.into_os_string(),
+                candidate_path.clone().into_os_string(),
+            ];
+            assert_eq!(run_private(&arguments), 0);
+            let candidate = fs::read(candidate_path).unwrap();
+            assert!(!candidate.is_empty());
+            assert!(candidate.len() <= source.len());
+        }
         fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
-    fn bounded_capture_drains_and_marks_truncation() {
-        let bytes = vec![b'x'; MAX_DIAGNOSTIC_BYTES + 10];
-        let captured = spawn_capture(io::Cursor::new(bytes)).join().unwrap();
-        assert_eq!(captured.bytes.len(), MAX_DIAGNOSTIC_BYTES);
-        assert!(captured.truncated);
+    fn optipng_command_pins_every_adapter_argument() {
+        let strategy = external_strategy(PathBuf::from("provider"));
+        let command = strategy_command(
+            &strategy,
+            Path::new("private-input.png"),
+            Path::new("candidate.png"),
+        )
+        .unwrap();
+        assert_eq!(command.get_program(), OsStr::new("provider"));
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [
+                OsStr::new("-quiet"),
+                OsStr::new("-o2"),
+                OsStr::new("-out"),
+                OsStr::new("candidate.png"),
+                OsStr::new("--"),
+                OsStr::new("private-input.png"),
+            ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_strategy_uses_private_paths_and_captures_failures() {
+        let directory = test_directory();
+        let source = compressible_png();
+        let success = directory.join("success-optipng");
+        write_executable(
+            &success,
+            "#!/bin/sh\nwhile [ \"$1\" != \"-out\" ]; do shift; done\nshift\noutput=$1\nshift 2\ncp \"$1\" \"$output\"\n",
+        );
+        let mut artifacts = Artifacts::new(directory.clone());
+        assert_eq!(
+            run_strategy(&mut artifacts, &source, &external_strategy(success)),
+            StrategyResult::Candidate(source.clone())
+        );
+
+        let failure = directory.join("failing-optipng");
+        write_executable(
+            &failure,
+            "#!/bin/sh\nprintf 'provider failed\\n' >&2\nexit 9\n",
+        );
+        let result = run_strategy(&mut artifacts, &source, &external_strategy(failure));
+        assert!(matches!(
+            result,
+            StrategyResult::Warning(message) if message.contains("provider failed")
+        ));
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 2);
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -454,5 +516,25 @@ mod tests {
         ));
         fs::create_dir(&path).unwrap();
         path
+    }
+
+    #[cfg(unix)]
+    fn write_executable(path: &Path, contents: &str) {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        fs::write(path, contents).unwrap();
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).unwrap();
+    }
+
+    fn external_strategy(executable: PathBuf) -> Strategy {
+        Strategy {
+            id: StrategyId::OptipngV1,
+            execution: Execution::External {
+                executable,
+                version: "7.9.1".to_owned(),
+            },
+        }
     }
 }

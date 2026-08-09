@@ -1,19 +1,19 @@
-# Version 0.1 Input and Batch Contract
+# Version 0.2 Input and Batch Contract
 
 > [!IMPORTANT]
-> This is the implemented version 0.1 input and batch contract.
+> This is the implemented version 0.2 input and batch contract.
 
 ## Boundary
 
-This document records version 0.1 input handling. Exact constants and their
-enforcement classifications are in [LIMITS.md](LIMITS.md). Version 0.1
+This document records version 0.2 input handling. Exact constants and their
+enforcement classifications are in [LIMITS.md](LIMITS.md). Version 0.2
 deliberately uses common path and file operations and does not promise defense
 against adversarial replacement of path components while an invocation is
 running.
 
 ## Invocation and preflight
 
-Version 0.1 accepts explicit regular files and one required existing output directory:
+Version 0.2 accepts explicit regular files and one required existing output directory:
 
 ```text
 imglean --output OUTPUT_DIRECTORY INPUT...
@@ -27,7 +27,7 @@ The controller captures the initial working directory and preflights the complet
 
 The output directory must be an existing directory. The controller does not mutate it to probe filesystem capabilities during structural preflight. Lack of hard-link support is therefore discovered when an otherwise complete result is published and is reported as a per-input output failure.
 
-Preflight retains each opened source file. Later capture reads that open file rather than resolving the user-provided pathname again. Sidecar and output operations remain path-based; concurrent path replacement can make them fail or redirect them, and version 0.1 does not claim otherwise.
+Preflight retains each opened source file. Later capture reads that open file rather than resolving the user-provided pathname again. Sidecar and output operations remain path-based; concurrent path replacement can make them fail or redirect them, and version 0.2 does not claim otherwise.
 
 ## Source capture
 
@@ -39,11 +39,14 @@ The captured bytes are the source of truth for validation, the controller-owned 
 
 Embedded PNG handling is defined in [PNG.md](PNG.md). For an accepted basename, the C2PA-defined external-manifest path replaces the final extension with `.c2pa`; ImgLean's additional conservative heuristic appends `.c2pa` to the complete basename. Thus `photo.png` checks `photo.c2pa` and `photo.png.c2pa`. Names without an unambiguous stem and extension are already rejected during structural preflight.
 
-The sidecar names are derived from the canonical source path's filename and checked beside that canonical source. Immediately before and after source capture, the controller checks both pathnames. Any filesystem entry or lookup failure is a per-input source-validation failure. Later sidecar changes are intentionally ignored because the output represents that capture. ImgLean does not parse the sidecar or access the network. Concurrent renaming or replacement of the source parent can affect these path-based checks and is outside the version 0.1 guarantee.
+The sidecar names are derived from the canonical source path's filename and checked beside that canonical source. Immediately before and after source capture, the controller checks both pathnames. Any filesystem entry or lookup failure is a per-input source-validation failure. Later sidecar changes are intentionally ignored because the output represents that capture. ImgLean does not parse the sidecar or access the network. Concurrent renaming or replacement of the source parent can affect these path-based checks and is outside the version 0.2 guarantee.
 
 ## Work limits and sequencing
 
-Version 0.1 processes inputs sequentially after batch preflight. Its single optimizing strategy runs in a separate worker, and the current input is committed and reported before the next begins.
+Version 0.2 processes inputs sequentially after batch preflight. Every enabled
+strategy is attempted sequentially for the current input before its winner is
+committed and reported and the next input begins. Provider resolution, including
+required external-provider checks, completes before input processing.
 
 The implementation bounds and tests input count, per-input and aggregate
 captured bytes, worker concurrency, temporary and candidate storage, buffered
@@ -56,7 +59,15 @@ An invocation-wide limit breach cancels the current work, prevents later commits
 
 All user-controlled paths and captured worker text are converted to one physical line: control characters use visible escapes and invalidly encoded path units use hexadecimal escapes. Raw worker output is never forwarded directly.
 
-For each input processed after structural preflight, ImgLean attempts one standard-output result after its commit or failure decision and before the next input begins. A structural abort emits only a standard-error summary. Other warnings, errors, and summaries also go to standard error. Standard-error writes are best effort; their failure does not create a separate reporting failure or alter the exit status. If a required standard-output write fails, ImgLean performs no later commits, cleans current-run uncommitted artifacts, and exits `1`; earlier committed outputs remain valid.
+For each input processed after structural preflight, ImgLean attempts one
+standard-output result after its commit or failure decision and before the next
+input begins. A successful result names the winning strategy or baseline. A
+structural abort emits only standard-error diagnostics. Resolved external
+provider records, warnings, errors, and summaries also go to standard error.
+Standard-error writes are best effort; their failure does not create a separate
+reporting failure or alter the exit status. If a required standard-output write
+fails, ImgLean performs no later commits, cleans current-run uncommitted
+artifacts, and exits `1`; earlier committed outputs remain valid.
 
 Exit statuses are:
 

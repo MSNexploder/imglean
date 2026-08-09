@@ -1,90 +1,80 @@
-# Version 0.1 Provider Execution Contract
+# Version 0.2 Provider Execution Contract
 
 > [!IMPORTANT]
-> This is an approved version 0.1 implementation contract. Exact provider
-> revisions, options, and numeric limits are versioned beside the code and
-> release artifacts.
+> Provider revisions, strategy identifiers, options, and limits are versioned
+> beside the code and recorded in release artifacts.
 
-## Boundary
+## Registry and controls
 
-ImgLean runs each built-in optimizing strategy in a short-lived worker process
-created from the same target-specific executable. The worker boundary isolates
-provider crashes and hangs from the controller. It is not a security sandbox or
-a portable hard memory-containment boundary.
+The stable default order is `oxipng-libdeflate-v1`,
+`oxipng-zopfli-v1`, then `optipng-v1`. The source baseline precedes all three.
+Every enabled strategy is attempted once per validated input. Strictly smaller
+accepted output replaces the current winner; stable order breaks equal sizes.
 
-The private worker role is an implementation detail, not a supported command,
-plugin interface, or compatibility promise. The controller remains the only
-component allowed to select a winner or publish a requested destination.
+Compatible embedded strategies are enabled by default. `--disable-strategy ID`
+removes a strategy. `--require-strategy ID` requires it to resolve during
+preflight. `--provider optipng PATH` selects that executable and implicitly
+requires `optipng-v1`. Duplicate, unknown, or disabled-and-required controls are
+usage errors.
 
-## Protocol
+## Execution boundary
 
-The controller invokes the current executable with a versioned private role,
-the fixed strategy identifier, a controller-created private input path, and a
-controller-reserved candidate path. Both paths identify current-invocation
-artifacts in the canonical output directory. The original source path and the
-requested destination path are never worker inputs.
+Each strategy receives a fresh private input containing the controller's exact
+validated source capture and a reserved absent candidate path. Neither the
+source path nor requested destination is provided. The controller verifies that
+the private input remained unchanged, bounds and reads any candidate, validates
+it independently, and exclusively owns selection and publication.
 
-The private input contains the controller's complete validated source capture.
-The worker opens and bounded-reads it, runs the configured provider in memory,
-and creates the candidate path with create-new semantics. It never modifies the
-private input. The controller treats the candidate and all worker output as
-untrusted and validates them independently.
+Embedded OxiPNG runs in a short-lived private role of the current executable.
+The private protocol contains its version, strategy ID, limits version, private
+input, and candidate path. It is not a public command or plugin interface.
 
-The worker communicates success or failure through its exit status. Standard
-output is reserved for future private protocol diagnostics and is empty in
-version 0.1. Standard error may contain a human-readable diagnostic, but the
-controller never forwards it directly.
+External OptiPNG is itself the supervised worker process. It receives the same
+private paths through its pinned command adapter. Process separation isolates
+ordinary provider crashes and hangs but is not a security sandbox.
 
-Protocol-version, strategy, argument-count, path, and limit mismatches are
-worker failures. They never alter the public CLI usage status.
+## External discovery
 
-## Supervision and limits
+ImgLean supports exactly OptiPNG 7.9.1 for `optipng-v1`. Preflight first uses a
+configured path when present; otherwise it searches `PATH` for `optipng` (or
+`optipng.exe` on Windows). It canonicalizes an executable regular file, invokes
+`-version` under the discovery deadline, and requires the exact supported
+version. The resolved path and reported version are retained and reported once.
 
-The controller captures both worker streams concurrently so neither pipe can
-block the worker. It retains at most the configured number of bytes from each
-stream while continuing to drain discarded bytes. Captured bytes are rendered
-as one physical escaped line before reporting.
+Automatic absence, a failed probe, or incompatibility skips the optional
+strategy. The same condition fails preflight when the user required or
+configured it. ImgLean never searches again during the invocation and never
+downloads, installs, updates, or repairs provider software.
 
-The worker receives the provider-supported decompressed-byte and elapsed-time
-limits. The controller separately enforces a wall-clock deadline, terminates a
-worker that exceeds it, waits for termination, and cleans current-run private
-artifacts. Provider timeouts are configured slightly inside the controller
-deadline so normal provider timeout reporting can complete.
+## Supervision and result handling
 
-Version 0.1 hard-enforces source, private-input, candidate-file,
-captured-stream, and temporary-storage byte limits. Provider and controller
-elapsed limits are configured or monitored at documented boundaries; blocking
-operating-system calls may overshoot before control returns. Provider allocation
-and native-code memory use are bounded indirectly by accepted dimensions,
-decoded-byte limits, provider configuration, sequential execution, and process
-termination; they are not claimed as portable hard address-space limits. Exact
-values and enforcement classifications are in [LIMITS.md](LIMITS.md).
+Standard input is null. Standard output and error are drained concurrently,
+bounded independently, and escaped before diagnostics. The controller polls the
+process deadline, kills and reaps an overdue process, and cleans only private
+artifacts tracked for the current invocation.
 
-The built-in provider does not create descendants. ImgLean does not claim to
-terminate descendants of a compromised worker or to bound machine-wide resource
-exhaustion.
+Start failure, nonzero or abnormal exit, timeout, excessive diagnostics,
+unreadable or oversized output, or candidate rejection produces one strategy
+warning and no candidate. Other strategies and the baseline continue. A
+successful provider that writes no candidate is the explicit no-improvement
+case and is normal, as is an accepted candidate that does not improve the
+winner. Private-input mutation or cleanup failure is a per-input failure because
+controller-owned state can no longer be trusted.
 
-## Result handling
+Exact byte and time controls and their enforcement classification are in
+[LIMITS.md](LIMITS.md). Memory is bounded indirectly by format and artifact
+limits; no portable hard provider address-space limit is claimed.
 
-The following are optimizing-strategy warnings, not source failures:
+## Coverage contract
 
-- provider error or panic;
-- abnormal exit or signal termination;
-- timeout or failure to terminate cleanly;
-- excessive or malformed diagnostics;
-- missing, oversized, unreadable, or structurally invalid candidate; and
-- a candidate rejected by the active PNG equivalence policy.
+Registry tests enumerate every stable strategy ID and prove one ordered attempt
+per applicable strategy, baseline fallback, warning continuation, deterministic
+winner selection, and equal-size tie behavior. Every embedded strategy runs
+directly and through native controller tests. External tests cover absence,
+required/configured failure, incompatible versions, process failures, bounded
+diagnostics, missing and invalid candidates, larger candidates, and process
+timeouts. Native CI downloads a checksum-pinned OptiPNG 7.9.1 for each release
+target and proves discovery plus a real external-only reduction.
 
-The controller excludes the failed candidate and continues deterministic
-selection with the baseline and any other accepted candidates. A valid candidate
-that is not smaller is a normal no-improvement result and does not warn.
-
-## Cleanup
-
-The controller tracks every private input and candidate path reserved or created
-for the current invocation. Handled success and failure remove those entries
-when possible. ImgLean never scans for similarly named artifacts and never
-deletes an artifact it did not create or reserve in the current invocation.
-
-Abnormal termination may leave private artifacts. Version 0.1 does not promise
-crash cleanup.
+This registry is an explicit product surface, not a generic executable plugin
+mechanism.

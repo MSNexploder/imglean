@@ -33,12 +33,88 @@ jobs:
       - name: Build release executable
         run: cargo build --locked --release --target ${{ matrix.target }}
 
+  external-provider:
+    name: OptiPNG adapter (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            binary: target/x86_64-unknown-linux-gnu/release/imglean
+            kind: source
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            binary: target/x86_64-apple-darwin/release/imglean
+            kind: source
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            binary: target/x86_64-pc-windows-msvc/release/imglean.exe
+            kind: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
+        with:
+          install: false
+      - name: Install build tools
+        run: mise install rust python
+      - name: Build ImgLean
+        run: cargo build --locked --release --target ${{ matrix.target }}
+      - name: Build pinned OptiPNG
+        if: matrix.kind == 'source'
+        id: optipng_source
+        shell: bash
+        run: |
+          version=$(tr -d '\r\n' < ci/optipng-version.txt)
+          archive="$RUNNER_TEMP/optipng.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://downloads.sourceforge.net/project/optipng/OptiPNG/optipng-${version}/optipng-${version}.tar.gz" \
+            --output "$archive"
+          echo "c2579be58c2c66dae9d63154edcb3d427fef64cb00ec0aff079c9d156ec46f29  $archive" | shasum -a 256 --check
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/optipng-${version}"
+          ./configure
+          make -j2
+          provider="$RUNNER_TEMP/optipng-${version}/src/optipng/optipng"
+          test -x "$provider"
+          echo "path=$provider" >> "$GITHUB_OUTPUT"
+      - name: Install pinned OptiPNG
+        if: matrix.kind == 'windows'
+        id: optipng_windows
+        shell: pwsh
+        run: |
+          $version = (Get-Content ci/optipng-version.txt -Raw).Trim()
+          $archive = Join-Path $env:RUNNER_TEMP "optipng-win64.zip"
+          Invoke-WebRequest "https://downloads.sourceforge.net/project/optipng/OptiPNG/optipng-$version/optipng-$version-win64.zip" -OutFile $archive
+          $actual = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne "cdc632c21e11b2e0ba6f87a0df632f810827267f263b655002a849d3f87b06b2") { throw "OptiPNG checksum mismatch" }
+          $destination = Join-Path $env:RUNNER_TEMP "optipng"
+          Expand-Archive $archive -DestinationPath $destination
+          $provider = (Get-ChildItem $destination -Recurse -Filter optipng.exe | Select-Object -First 1).FullName
+          if (-not $provider) { throw "OptiPNG executable not found" }
+          "path=$provider" >> $env:GITHUB_OUTPUT
+      - name: Exercise discovery and real provider execution
+        run: >-
+          mise exec -- python tools/test_external_provider.py
+          --binary ${{ matrix.binary }}
+          --provider "${{ steps.optipng_source.outputs.path || steps.optipng_windows.outputs.path }}"
+
   compliance:
     name: Dependency and release records
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v3
+      - name: Verify generated PNG corpus
+        shell: bash
+        run: |
+          mise exec -- python tools/generate_png_corpus.py
+          changes=$(git status --porcelain --untracked-files=all -- tests/corpus/png/v2)
+          if test -n "$changes"; then
+            printf '%s\n' "$changes"
+            exit 1
+          fi
       - name: Audit dependencies
         run: mise run audit
       - name: Verify generated notices

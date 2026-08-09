@@ -1,4 +1,4 @@
-# Version 0.1 Release Contract
+# Version 0.2 Release Contract
 
 > [!IMPORTANT]
 > Release automation is implemented, but the x86-64 target artifacts are not
@@ -7,7 +7,7 @@
 
 ## Targets
 
-Version 0.1 release qualification begins with these target-specific artifacts:
+Version 0.2 release qualification begins with these target-specific artifacts:
 
 - `x86_64-apple-darwin`;
 - `x86_64-unknown-linux-gnu`; and
@@ -35,7 +35,7 @@ toolchain and used for all builds. Each artifact records:
 - native compiler, linker, SDK, and build-tool versions; and
 - the source commit.
 
-This record supports audit and reconstruction. Version 0.1 does not promise
+This record supports audit and reconstruction. Version 0.2 does not promise
 bit-for-bit reproducible binaries.
 
 The development configuration currently pins cargo-deny `0.20.2`, cargo-about
@@ -49,8 +49,10 @@ the standard-library-only packager and is also recorded.
 ## Qualification
 
 Every target runs the canonical locked formatting, lint, and test gate plus the
-target-native CLI, worker-spawn, hard-link, metadata, and packaged-artifact smoke
-tests. Representative native filesystems must demonstrate non-replacing
+target-native CLI, both embedded strategies, worker-spawn, hard-link, metadata,
+and packaged-artifact smoke tests. Separate CI jobs install the checksum-pinned
+supported OptiPNG version and prove external discovery and execution on each
+target. Representative native filesystems must demonstrate non-replacing
 hard-link publication. Cross-compilation alone does not qualify a target.
 
 The canonical source gate is `mise run check`. Release qualification also runs
@@ -81,12 +83,17 @@ Each platform archive contains:
 - the release-input manifest; and
 - SHA-256 checksums.
 
+The manifest records stable strategy order, identifiers, embedded settings, the
+supported external-provider version and invocation arguments, and exact bundled
+OxiPNG, libdeflater, and Zopfli dependency versions. External OptiPNG is neither
+bundled nor included in the dependency inventory or SBOM.
+
 Archives do not include an installer, separately installed optimizer, or runtime.
 Release notes state the exact platform boundary and do not imply that one binary
 runs across operating systems.
 
 `tools/package_release.py` refuses a dirty source tree for normal packaging. It
-also accepts only the three declared version 0.1 targets, requires the declared
+also accepts only the three declared version 0.2 targets, requires the declared
 target to equal the native Rust host, and requires the release-binary smoke
 corpus to produce a strict size reduction. It
 creates `.tar.gz` archives for macOS and Linux and `.zip` archives for Windows,

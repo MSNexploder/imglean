@@ -319,6 +319,7 @@ mod tests {
         let batch = preflight(Arguments {
             output_directory: output_directory.clone(),
             inputs: vec![source.clone()],
+            strategies: crate::strategy::Selection::default(),
         })
         .unwrap();
         assert_eq!(
@@ -348,6 +349,7 @@ mod tests {
             preflight(Arguments {
                 output_directory: output.clone(),
                 inputs: vec![first.clone(), second],
+                strategies: crate::strategy::Selection::default(),
             }),
             Err(PreflightError::Input { reason, .. })
                 if reason == "the output basename collides after ASCII case folding"
@@ -356,6 +358,7 @@ mod tests {
             preflight(Arguments {
                 output_directory: output,
                 inputs: vec![first.clone(), first],
+                strategies: crate::strategy::Selection::default(),
             }),
             Err(PreflightError::Input { reason, .. }) if reason == "the canonical input is repeated"
         ));
@@ -372,6 +375,7 @@ mod tests {
         let batch = preflight(Arguments {
             output_directory: output,
             inputs: vec![first, second],
+            strategies: crate::strategy::Selection::default(),
         })
         .unwrap();
         assert_eq!(batch.inputs.len(), 2);
@@ -388,6 +392,7 @@ mod tests {
             preflight(Arguments {
                 output_directory: output,
                 inputs: vec![source],
+                strategies: crate::strategy::Selection::default(),
             }),
             Err(PreflightError::Destination { .. })
         ));
@@ -417,6 +422,7 @@ mod tests {
             preflight(Arguments {
                 output_directory: output.clone(),
                 inputs: vec![link],
+                strategies: crate::strategy::Selection::default(),
             }),
             Err(PreflightError::Input { reason, .. })
                 if reason == "the final input component is a symbolic link"
@@ -427,6 +433,7 @@ mod tests {
             preflight(Arguments {
                 output_directory: output,
                 inputs: vec![target],
+                strategies: crate::strategy::Selection::default(),
             }),
             Err(PreflightError::Destination { .. })
         ));
@@ -441,6 +448,7 @@ mod tests {
         let mut batch = preflight(Arguments {
             output_directory: output.clone(),
             inputs: vec![source.clone()],
+            strategies: crate::strategy::Selection::default(),
         })
         .unwrap();
         let error = batch.inputs[0]
@@ -459,6 +467,7 @@ mod tests {
         let mut batch = preflight(Arguments {
             output_directory: output,
             inputs: vec![source],
+            strategies: crate::strategy::Selection::default(),
         })
         .unwrap();
         assert!(matches!(
@@ -471,6 +480,7 @@ mod tests {
         let mut batch = preflight(Arguments {
             output_directory: directory.create_directory("second-out"),
             inputs: vec![directory.path.join("photo.png")],
+            strategies: crate::strategy::Selection::default(),
         })
         .unwrap();
         assert!(matches!(
@@ -495,6 +505,7 @@ mod tests {
         let batch = preflight(Arguments {
             output_directory: output.clone(),
             inputs: vec![linked_directory.join("Photo.PNG")],
+            strategies: crate::strategy::Selection::default(),
         })
         .unwrap();
 

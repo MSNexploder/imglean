@@ -1,70 +1,66 @@
-# Version 0.1 PNG Contract
+# Version 0.2 PNG Contract
 
 > [!IMPORTANT]
-> This is the implemented version 0.1 PNG contract.
+> This is the implemented static-PNG validation and acceptance contract.
 
-## Boundary
+## Accepted encoding surface
 
-This document defines the deliberately limited PNG surface needed to prove ImgLean's optimization race. It uses the [PNG Third Edition](https://www.w3.org/TR/png-3/) container rules but does not claim semantic validation of standards embedded inside ancillary payloads.
+ImgLean accepts bounded, non-animated PNG using the standard compression and
+filter methods. All PNG-defined static color-type and bit-depth combinations
+are eligible: packed and 8/16-bit grayscale, 8/16-bit truecolor, 1/2/4/8-bit
+indexed color, 8/16-bit grayscale-alpha, and 8/16-bit truecolor-alpha. Both
+non-interlaced and Adam7 images are supported.
 
-## Accepted image encodings
+The `.png` input suffix is a path requirement, not format evidence. The
+validator checks the PNG signature, chunk framing and CRCs, structure needed by
+the decoder, image-data decompression and filtering, a complete decoded frame,
+IEND, and absence of trailing bytes. Repairable errors are rejected rather than
+repaired.
 
-Version 0.1 accepts non-animated, non-interlaced PNG with compression method 0 and filter method 0. It accepts:
+## Explicit policy refusals
 
-- 8-bit grayscale, truecolor, grayscale-with-alpha, and truecolor-with-alpha; and
-- indexed-color at 1, 2, 4, or 8 bits.
+`acTL`, `fcTL`, or `fdAT` rejects the file because version 0.2 does not process
+APNG. `caBX` rejects C2PA-bearing PNG. A `tEXt`, `zTXt`, or `iTXt` chunk whose
+keyword is `XML:com.adobe.xmp` rejects standard XMP. Adjacent external C2PA
+manifests are refused by the input contract. No remote lookup occurs.
 
-Sixteen-bit samples and Adam7 are deferred. The input contract requires a `.png` filename, but the validator independently detects and validates PNG from its signature and structure; the extension alone never establishes the format.
+Other ancillary payloads are opaque after bounded container checks. In
+particular, ImgLean does not parse or normalize ICC, Exif, text, XML, language
+tags, or private ancillary semantics. The PNG decoder is instructed not to
+inflate text or ICC payloads; the image data itself must still decode fully.
 
-The validator checks the signature, chunk framing and CRCs, required critical chunks, ordering, palette references, IDAT zlib stream, scanline filters, reconstructed samples, and absence of trailing bytes. It rejects repairable errors rather than repairing them.
+## Candidate gate
 
-`acTL`, `fcTL`, or `fdAT` rejects the file as APNG. Any chunk type outside the accepted list, including otherwise standard ancillary chunks, is rejected.
+The source and every provider result are validated independently. A candidate
+may compete only when it:
 
-## Accepted ancillary chunks
+- is within the candidate encoded-byte limit;
+- passes the complete static-PNG gate above;
+- has exactly the source width and height; and
+- is strictly smaller than the current winner.
 
-The accepted standard ancillary chunk types are:
+The first three conditions determine acceptance; the last determines whether an
+accepted candidate replaces the winner. A valid larger or equal-size candidate
+is normal and does not warn.
 
-```text
-tRNS cHRM gAMA sBIT sRGB
-tEXt bKGD pHYs tIME
-```
+ImgLean does not compare decoded samples, RGB beneath full transparency, chunk
+order, or ancillary payload identity. Those transformations remain opaque
+provider output. Losslessness and metadata preservation are therefore claims of
+the audited, versioned provider configuration. No version 0.2 strategy is
+configured to repair errors, reduce fidelity, deliberately strip metadata,
+alter fully transparent RGB, or force an interlace change. Lossless
+representation reductions performed by an audited provider are permitted.
 
-The validator enforces the PNG-defined structure, values, multiplicity, ordering, and cross-chunk dependencies of accepted chunks. The `tEXt` payload is opaque after its PNG keyword and framing checks; ImgLean neither normalizes it nor claims semantic validity for its content.
+## Bounds and corpus
 
-Under the version 0.1 C2PA 2.4 refusal policy, a `tEXt` chunk with the standard XMP keyword `XML:com.adobe.xmp` or any `caBX` chunk rejects the input. The limited subset also rejects `iCCP`, `zTXt`, `iTXt`, and `eXIf`. Together these rules avoid adding ICC, Exif, XML/RDF, or language-tag parsers solely for the first milestone. ImgLean performs no remote lookup.
-
-## Candidate equivalence
-
-A candidate is accepted only when:
-
-- `IHDR` and `PLTE` are byte-for-byte identical;
-- every accepted ancillary chunk is byte-for-byte identical and remains in the same order and on the same side of the complete consecutive IDAT group;
-- every reconstructed native sample is identical at the stored bit depth, including color samples under full transparency; and
-- no critical structure or trailing data changes except the IDAT representation.
-
-Unused low-order padding bits at the end of packed indexed-color scanlines are not image samples and may change. Otherwise, only filtering, deflate bytes, and segmentation within the consecutive IDAT group may change. A bounded controller validator independent of OxiPNG performs this comparison.
-
-## Bounds
-
-Source and candidate validation bounds encoded bytes, dimensions, total pixels,
-reconstructed sample storage, chunk size and count, total ancillary bytes,
-allocations, image-data decompression work, and validation time.
-
-Exact values and enforcement classifications are version-controlled in
-[LIMITS.md](LIMITS.md) and `src/limits.rs` and covered by boundary tests.
-
-## OxiPNG boundary
-
-Every behavior-affecting OxiPNG option and its exact revision must be pinned before enablement. Error repair, representation reductions, alpha optimization, metadata stripping, and interlace changes remain disabled.
-
-A no-improvement result is a normal baseline-only result, not a warning; absent another warning or failure, it contributes to exit `0`.
-
-## Corpus gate
-
-The checked-in corpus covers every accepted color-type and bit-depth combination, palette and transparency cases, each accepted ancillary family, opaque text payloads, fully transparent nonzero color samples, malformed structures, APNG, XMP-bearing `tEXt`, rejected standard ancillary chunks, `caBX`, unknown chunks, trailing data, semantic changes, and at least one validated OxiPNG reduction.
+Encoded size, dimensions, total pixels, decoder allocation, chunk size/count,
+total ancillary payload, and validation time are bounded as documented in
+[LIMITS.md](LIMITS.md). The checked-in v2 corpus explicitly covers every static
+color-type/bit-depth class, Adam7, common and private ancillary chunks,
+malformed/truncated files, APNG, XMP, `caBX`, changed pixels and dimensions, and
+provider reductions.
 
 ## References
 
 - [PNG Specification, Third Edition](https://www.w3.org/TR/png-3/)
 - [C2PA Technical Specification 2.4](https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html)
-- [OxiPNG options](https://docs.rs/oxipng/latest/oxipng/struct.Options.html)

@@ -7,27 +7,60 @@ use crate::diagnostics::escape_path;
 use crate::input::{self, CaptureError, PreflightError, PreflightInput};
 use crate::limits::{INVOCATION_TIMEOUT, MAX_AGGREGATE_SOURCE_BYTES};
 use crate::output::{self, OutputError};
-use crate::png::{self, ValidatedPng};
+use crate::png;
+use crate::strategy::{self, Execution, Strategy, StrategyId};
 use crate::worker::{self, StrategyResult};
 
-pub fn run(arguments: Arguments, stdout: impl Write, stderr: impl Write) -> i32 {
-    run_with_strategy(
+pub fn run(arguments: Arguments, stdout: impl Write, mut stderr: impl Write) -> i32 {
+    let strategies = match strategy::resolve(&arguments.strategies) {
+        Ok(strategies) => strategies,
+        Err(error) => {
+            let mut stderr = stderr;
+            write_stderr(
+                &mut stderr,
+                &format!("imglean: provider preflight failed: {}\n", error.message()),
+            );
+            write_stderr(
+                &mut stderr,
+                "imglean: structural preflight failed; no outputs were created\n",
+            );
+            return 1;
+        }
+    };
+    for strategy in &strategies {
+        if let Execution::External {
+            executable,
+            version,
+        } = &strategy.execution
+        {
+            write_stderr(
+                &mut stderr,
+                &format!(
+                    "imglean: using {strategy} provider version {version} at {}\n",
+                    escape_path(executable.as_os_str())
+                ),
+            );
+        }
+    }
+    run_with_strategies(
         arguments,
         stdout,
         stderr,
         MAX_AGGREGATE_SOURCE_BYTES,
         INVOCATION_TIMEOUT,
+        strategies,
         worker::run_strategy,
     )
 }
 
-fn run_with_strategy(
+fn run_with_strategies(
     arguments: Arguments,
     mut stdout: impl Write,
     mut stderr: impl Write,
     maximum_aggregate_bytes: u64,
     invocation_timeout: std::time::Duration,
-    mut strategy: impl FnMut(&mut Artifacts, &[u8]) -> StrategyResult,
+    strategies: Vec<Strategy>,
+    mut execute: impl FnMut(&mut Artifacts, &[u8], &Strategy) -> StrategyResult,
 ) -> i32 {
     let mut budget = InvocationBudget {
         started: Instant::now(),
@@ -69,21 +102,24 @@ fn run_with_strategy(
             &mut artifacts,
             &mut budget,
             &mut stderr,
-            &mut strategy,
+            &strategies,
+            &mut execute,
         );
         let mut stop_after_reporting = false;
         let result_line = match outcome {
             InputOutcome::Success {
                 source_bytes,
                 output_bytes,
-                optimizer_warning,
+                optimizer_warnings,
+                winner,
             } => {
                 succeeded += 1;
-                warnings += usize::from(optimizer_warning);
+                warnings += optimizer_warnings;
                 format!(
-                    "ok {} -> {} ({source_bytes} -> {output_bytes} bytes)\n",
+                    "ok {} -> {} ({source_bytes} -> {output_bytes} bytes; winner {})\n",
                     escape_path(input.canonical_source.as_os_str()),
-                    escape_path(input.destination.as_os_str())
+                    escape_path(input.destination.as_os_str()),
+                    winner.map_or("baseline", StrategyId::as_str)
                 )
             }
             InputOutcome::Failure(reason) => {
@@ -154,7 +190,8 @@ fn process_input(
     artifacts: &mut Artifacts,
     budget: &mut InvocationBudget,
     stderr: &mut impl Write,
-    strategy: &mut impl FnMut(&mut Artifacts, &[u8]) -> StrategyResult,
+    strategies: &[Strategy],
+    execute: &mut impl FnMut(&mut Artifacts, &[u8], &Strategy) -> StrategyResult,
 ) -> InputOutcome {
     let source_bytes =
         match input.capture(&mut budget.aggregate_bytes, budget.maximum_aggregate_bytes) {
@@ -171,38 +208,50 @@ fn process_input(
         Err(error) => return InputOutcome::Failure(error.message()),
     };
 
-    let mut optimizer_warning = false;
-    let candidate = match strategy(artifacts, &source_bytes) {
-        StrategyResult::Candidate(bytes) => match png::validate_candidate(&source, &bytes) {
-            Ok(validated) => Some((bytes, validated)),
-            Err(error) => {
-                optimizer_warning = true;
+    let mut optimizer_warnings = 0usize;
+    let mut winner = None::<Vec<u8>>;
+    let mut winner_strategy = None;
+    let mut output_bytes = source.encoded_bytes();
+    for strategy in strategies {
+        if budget.elapsed() {
+            return InputOutcome::InvocationFailure("invocation elapsed-time limit exceeded");
+        }
+        match execute(artifacts, &source_bytes, strategy) {
+            StrategyResult::Candidate(bytes) => match png::validate_candidate(&source, &bytes) {
+                Ok(validated) if validated.encoded_bytes() < output_bytes => {
+                    output_bytes = validated.encoded_bytes();
+                    winner = Some(bytes);
+                    winner_strategy = Some(strategy.id);
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    optimizer_warnings += 1;
+                    write_stderr(
+                        stderr,
+                        &format!(
+                            "imglean: warning: {strategy} candidate rejected for {}: {}\n",
+                            escape_path(input.canonical_source.as_os_str()),
+                            error.message()
+                        ),
+                    );
+                }
+            },
+            StrategyResult::NoCandidate => {}
+            StrategyResult::Warning(message) => {
+                optimizer_warnings += 1;
                 write_stderr(
                     stderr,
                     &format!(
-                        "imglean: warning: OxiPNG candidate rejected for {}: {}\n",
-                        escape_path(input.canonical_source.as_os_str()),
-                        error.message()
+                        "imglean: warning: {strategy} for {}: {message}\n",
+                        escape_path(input.canonical_source.as_os_str())
                     ),
                 );
-                None
             }
-        },
-        StrategyResult::Warning(message) => {
-            optimizer_warning = true;
-            write_stderr(
-                stderr,
-                &format!(
-                    "imglean: warning: {}: {message}\n",
-                    escape_path(input.canonical_source.as_os_str())
-                ),
-            );
-            None
+            StrategyResult::Failure(reason) => return InputOutcome::Failure(reason),
         }
-        StrategyResult::Failure(reason) => return InputOutcome::Failure(reason),
-    };
+    }
 
-    let (winner, output_bytes) = select_winner(&source_bytes, &source, candidate.as_ref());
+    let winner = winner.as_deref().unwrap_or(&source_bytes);
     if budget.elapsed() {
         return InputOutcome::InvocationFailure("invocation elapsed-time limit exceeded");
     }
@@ -216,7 +265,8 @@ fn process_input(
     InputOutcome::Success {
         source_bytes: source.encoded_bytes(),
         output_bytes,
-        optimizer_warning,
+        optimizer_warnings,
+        winner: winner_strategy,
     }
 }
 
@@ -233,25 +283,12 @@ impl InvocationBudget {
     }
 }
 
-fn select_winner<'a>(
-    source_bytes: &'a [u8],
-    source: &ValidatedPng,
-    candidate: Option<&'a (Vec<u8>, ValidatedPng)>,
-) -> (&'a [u8], usize) {
-    if let Some((bytes, validated)) = candidate
-        && validated.encoded_bytes() < source.encoded_bytes()
-    {
-        (bytes, validated.encoded_bytes())
-    } else {
-        (source_bytes, source.encoded_bytes())
-    }
-}
-
 enum InputOutcome {
     Success {
         source_bytes: usize,
         output_bytes: usize,
-        optimizer_warning: bool,
+        optimizer_warnings: usize,
+        winner: Option<StrategyId>,
     },
     Failure(&'static str),
     InvocationFailure(&'static str),
@@ -315,29 +352,107 @@ mod tests {
 
     #[test]
     fn baseline_wins_equal_size_tie() {
-        let source_bytes = valid_png();
-        let source = png::validate_source(&source_bytes).unwrap();
-        let candidate = png::validate_candidate(&source, &source_bytes).unwrap();
-        let candidate_pair = (source_bytes.clone(), candidate);
-        let (winner, size) = select_winner(&source_bytes, &source, Some(&candidate_pair));
-        assert_eq!(winner, source_bytes);
-        assert_eq!(size, source.encoded_bytes());
+        let directory = TestDirectory::new();
+        let output = directory.create_directory("out");
+        let source = directory.path.join("source.png");
+        let bytes = valid_png();
+        fs::write(&source, &bytes).unwrap();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let status = run_with_strategies(
+            arguments(output.clone(), vec![source]),
+            &mut stdout,
+            &mut stderr,
+            MAX_AGGREGATE_SOURCE_BYTES,
+            INVOCATION_TIMEOUT,
+            test_strategies(),
+            |_, source, _| StrategyResult::Candidate(source.to_vec()),
+        );
+        assert_eq!(status, 0);
+        assert_eq!(fs::read(output.join("source.png")).unwrap(), bytes);
+        assert!(
+            String::from_utf8(stdout)
+                .unwrap()
+                .contains("winner baseline")
+        );
+    }
+
+    #[test]
+    fn attempts_every_strategy_once_and_keeps_the_smallest_candidate() {
+        let directory = TestDirectory::new();
+        let output = directory.create_directory("out");
+        let source = directory.path.join("source.png");
+        let base = valid_png();
+        let source_bytes = with_empty_idats(&base, 3);
+        let first_candidate = with_empty_idats(&base, 2);
+        let winner = base.clone();
+        fs::write(&source, source_bytes).unwrap();
+        let strategies = StrategyId::ALL
+            .into_iter()
+            .map(|id| Strategy {
+                id,
+                execution: if id == StrategyId::OptipngV1 {
+                    Execution::External {
+                        executable: PathBuf::from("unused"),
+                        version: "7.9.1".to_owned(),
+                    }
+                } else {
+                    Execution::Embedded
+                },
+            })
+            .collect::<Vec<_>>();
+        let mut attempted = Vec::new();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let status = run_with_strategies(
+            arguments(output.clone(), vec![source]),
+            &mut stdout,
+            &mut stderr,
+            MAX_AGGREGATE_SOURCE_BYTES,
+            INVOCATION_TIMEOUT,
+            strategies,
+            |_, _, strategy| {
+                attempted.push(strategy.id);
+                match strategy.id {
+                    StrategyId::OxipngLibdeflateV1 => {
+                        StrategyResult::Candidate(first_candidate.clone())
+                    }
+                    StrategyId::OxipngZopfliV1 => {
+                        StrategyResult::Warning("injected failure".to_owned())
+                    }
+                    StrategyId::OptipngV1 => StrategyResult::Candidate(winner.clone()),
+                }
+            },
+        );
+
+        assert_eq!(status, 3);
+        assert_eq!(attempted, StrategyId::ALL);
+        assert_eq!(fs::read(output.join("source.png")).unwrap(), base);
+        assert!(
+            String::from_utf8(stdout)
+                .unwrap()
+                .contains("winner optipng-v1")
+        );
+        assert!(
+            String::from_utf8(stderr)
+                .unwrap()
+                .contains("1 optimizer warnings")
+        );
     }
 
     #[test]
     fn structural_failure_writes_no_stdout() {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        let status = run_with_strategy(
-            Arguments {
-                output_directory: PathBuf::from("missing"),
-                inputs: vec![PathBuf::from("missing.png")],
-            },
+        let status = run_with_strategies(
+            arguments(PathBuf::from("missing"), vec![PathBuf::from("missing.png")]),
             &mut stdout,
             &mut stderr,
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
-            |_, _| panic!("strategy must not run"),
+            test_strategies(),
+            |_, _, _| panic!("strategy must not run"),
         );
         assert_eq!(status, 1);
         assert!(stdout.is_empty());
@@ -358,16 +473,14 @@ mod tests {
         fs::write(&first, &bytes).unwrap();
         fs::write(&second, &bytes).unwrap();
         let mut stderr = Vec::new();
-        let status = run_with_strategy(
-            Arguments {
-                output_directory: output.clone(),
-                inputs: vec![first, second],
-            },
+        let status = run_with_strategies(
+            arguments(output.clone(), vec![first, second]),
             FailingWriter,
             &mut stderr,
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
-            |_, source| StrategyResult::Candidate(source.to_vec()),
+            test_strategies(),
+            |_, source, _| StrategyResult::Candidate(source.to_vec()),
         );
         assert_eq!(status, 1);
         assert!(output.join("first.png").exists());
@@ -386,16 +499,14 @@ mod tests {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
 
-        let status = run_with_strategy(
-            Arguments {
-                output_directory: output.clone(),
-                inputs: vec![first, second],
-            },
+        let status = run_with_strategies(
+            arguments(output.clone(), vec![first, second]),
             &mut stdout,
             &mut stderr,
             0,
             INVOCATION_TIMEOUT,
-            |_, _| panic!("strategy must not run"),
+            test_strategies(),
+            |_, _, _| panic!("strategy must not run"),
         );
 
         assert_eq!(status, 1);
@@ -419,16 +530,14 @@ mod tests {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
 
-        let status = run_with_strategy(
-            Arguments {
-                output_directory: output.clone(),
-                inputs: vec![first, second],
-            },
+        let status = run_with_strategies(
+            arguments(output.clone(), vec![first, second]),
             &mut stdout,
             &mut stderr,
             MAX_AGGREGATE_SOURCE_BYTES,
             std::time::Duration::ZERO,
-            |_, _| panic!("strategy must not run"),
+            test_strategies(),
+            |_, _, _| panic!("strategy must not run"),
         );
 
         assert_eq!(status, 1);
@@ -438,6 +547,47 @@ mod tests {
         assert!(stderr.contains("2 not processed"));
         assert!(!output.join("first.png").exists());
         assert!(!output.join("second.png").exists());
+    }
+
+    #[test]
+    fn elapsed_limit_stops_before_the_next_strategy() {
+        let directory = TestDirectory::new();
+        let output = directory.create_directory("out");
+        let source = directory.path.join("source.png");
+        fs::write(&source, valid_png()).unwrap();
+        let strategies = StrategyId::EMBEDDED
+            .into_iter()
+            .map(|id| Strategy {
+                id,
+                execution: Execution::Embedded,
+            })
+            .collect();
+        let mut attempts = 0usize;
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let status = run_with_strategies(
+            arguments(output.clone(), vec![source]),
+            &mut stdout,
+            &mut stderr,
+            MAX_AGGREGATE_SOURCE_BYTES,
+            std::time::Duration::from_secs(1),
+            strategies,
+            |_, source, _| {
+                attempts += 1;
+                std::thread::sleep(std::time::Duration::from_millis(1_100));
+                StrategyResult::Candidate(source.to_vec())
+            },
+        );
+
+        assert_eq!(status, 1);
+        assert_eq!(attempts, 1);
+        assert!(!output.join("source.png").exists());
+        assert!(
+            String::from_utf8(stderr)
+                .unwrap()
+                .contains("elapsed-time limit exceeded")
+        );
     }
 
     #[test]
@@ -451,16 +601,14 @@ mod tests {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
 
-        let status = run_with_strategy(
-            Arguments {
-                output_directory: output.clone(),
-                inputs: vec![source],
-            },
+        let status = run_with_strategies(
+            arguments(output.clone(), vec![source]),
             &mut stdout,
             &mut stderr,
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
-            |_, _| StrategyResult::Candidate(larger.clone()),
+            test_strategies(),
+            |_, _, _| StrategyResult::Candidate(larger.clone()),
         );
 
         assert_eq!(status, 0);
@@ -482,16 +630,14 @@ mod tests {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
 
-        let status = run_with_strategy(
-            Arguments {
-                output_directory: output.clone(),
-                inputs: vec![source],
-            },
+        let status = run_with_strategies(
+            arguments(output.clone(), vec![source]),
             &mut stdout,
             &mut stderr,
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
-            |_, _| StrategyResult::Warning("injected provider failure".to_owned()),
+            test_strategies(),
+            |_, _, _| StrategyResult::Warning("injected provider failure".to_owned()),
         );
 
         assert_eq!(status, 3);
@@ -501,7 +647,65 @@ mod tests {
         assert!(stderr.contains("1 optimizer warnings"));
     }
 
+    #[test]
+    fn missing_candidate_is_normal_but_malformed_candidate_warns() {
+        let directory = TestDirectory::new();
+        let output = directory.create_directory("out");
+        let source = directory.path.join("source.png");
+        let bytes = valid_png();
+        fs::write(&source, &bytes).unwrap();
+        let strategies = StrategyId::EMBEDDED
+            .into_iter()
+            .map(|id| Strategy {
+                id,
+                execution: Execution::Embedded,
+            })
+            .collect();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let status = run_with_strategies(
+            arguments(output.clone(), vec![source]),
+            &mut stdout,
+            &mut stderr,
+            MAX_AGGREGATE_SOURCE_BYTES,
+            INVOCATION_TIMEOUT,
+            strategies,
+            |_, _, strategy| match strategy.id {
+                StrategyId::OxipngLibdeflateV1 => StrategyResult::NoCandidate,
+                StrategyId::OxipngZopfliV1 => StrategyResult::Candidate(b"not a PNG".to_vec()),
+                StrategyId::OptipngV1 => unreachable!(),
+            },
+        );
+
+        assert_eq!(status, 3);
+        assert_eq!(fs::read(output.join("source.png")).unwrap(), bytes);
+        assert!(
+            String::from_utf8(stdout)
+                .unwrap()
+                .contains("winner baseline")
+        );
+        let stderr = String::from_utf8(stderr).unwrap();
+        assert!(stderr.contains("candidate rejected"));
+        assert!(stderr.contains("1 optimizer warnings"));
+    }
+
     struct FailingWriter;
+
+    fn arguments(output_directory: PathBuf, inputs: Vec<PathBuf>) -> Arguments {
+        Arguments {
+            output_directory,
+            inputs,
+            strategies: crate::strategy::Selection::default(),
+        }
+    }
+
+    fn test_strategies() -> Vec<Strategy> {
+        vec![Strategy {
+            id: crate::strategy::StrategyId::OxipngLibdeflateV1,
+            execution: crate::strategy::Execution::Embedded,
+        }]
+    }
 
     impl io::Write for FailingWriter {
         fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
@@ -528,9 +732,15 @@ mod tests {
     }
 
     fn larger_valid_candidate(source: &[u8]) -> Vec<u8> {
+        with_empty_idats(source, 1)
+    }
+
+    fn with_empty_idats(source: &[u8], count: usize) -> Vec<u8> {
         let first_idat = 8 + 12 + 13;
         let mut candidate = source[..first_idat].to_vec();
-        push_chunk(&mut candidate, b"IDAT", &[]);
+        for _ in 0..count {
+            push_chunk(&mut candidate, b"IDAT", &[]);
+        }
         candidate.extend_from_slice(&source[first_idat..]);
         candidate
     }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the bounded version 0.1 PNG validation corpus."""
+"""Generate the bounded version 0.2 PNG validation corpus."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import struct
 import zlib
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1] / "tests" / "corpus" / "png" / "v1"
+ROOT = Path(__file__).resolve().parents[1] / "tests" / "corpus" / "png" / "v2"
 
 
 def chunk(name: bytes, data: bytes) -> bytes:
@@ -63,14 +63,22 @@ def main() -> None:
     palette16 = bytes(value for index in range(16) for value in (index * 16,) * 3)
     palette256 = bytes(value for index in range(256) for value in (index,) * 3)
 
+    write("accepted", "grayscale1.png", png(1, 1, 1, 0, b"\x00\x00"))
+    write("accepted", "grayscale2.png", png(1, 1, 2, 0, b"\x00\x40"))
+    write("accepted", "grayscale4.png", png(1, 1, 4, 0, b"\x00\x20"))
     write("accepted", "grayscale8.png", png(1, 1, 8, 0, b"\x00\x2a"))
+    write("accepted", "grayscale16.png", png(1, 1, 16, 0, b"\x00\x00\x2a"))
     write("accepted", "truecolor8.png", png(1, 1, 8, 2, b"\x00\x01\x02\x03"))
+    write("accepted", "truecolor16.png", png(1, 1, 16, 2, b"\x00\x00\x01\x00\x02\x00\x03"))
     write("accepted", "indexed1.png", png(1, 1, 1, 3, b"\x00\x00", palette=palette2))
     write("accepted", "indexed2.png", png(1, 1, 2, 3, b"\x00\x40", palette=palette4))
     write("accepted", "indexed4.png", png(1, 1, 4, 3, b"\x00\x20", palette=palette16))
     write("accepted", "indexed8.png", png(1, 1, 8, 3, b"\x00\x7f", palette=palette256))
     write("accepted", "grayscale-alpha8.png", png(1, 1, 8, 4, b"\x00\x2a\xff"))
+    write("accepted", "grayscale-alpha16.png", png(1, 1, 16, 4, b"\x00\x00\x2a\xff\xff"))
     write("accepted", "truecolor-alpha8.png", png(1, 1, 8, 6, b"\x00\x01\x02\x03\xff"))
+    write("accepted", "truecolor-alpha16.png", png(1, 1, 16, 6, b"\x00\x00\x01\x00\x02\x00\x03\xff\xff"))
+    write("accepted", "adam7.png", png(1, 1, 8, 6, b"\x00\x01\x02\x03\xff", interlace=1))
     write("accepted", "transparent-nonzero-color.png", png(1, 1, 8, 6, b"\x00\x05\x06\x07\x00"))
 
     srgb_chrm = (31270, 32900, 64000, 33000, 30000, 60000, 15000, 6000)
@@ -94,15 +102,15 @@ def main() -> None:
         "indexed-transparency.png",
         png(1, 1, 1, 3, b"\x00\x80", palette=palette2, after_palette=((b"tRNS", b"\x00\xff"),)),
     )
+    write("accepted", "compressed-text.png", png(1, 1, 8, 0, b"\x00\x2a", before=((b"zTXt", b"Note\x00\x00" + zlib.compress(b"opaque")),)))
+    write("accepted", "international-text.png", png(1, 1, 8, 0, b"\x00\x2a", before=((b"iTXt", b"Note\x00\x00\x00\x00\x00opaque"),)))
+    write("accepted", "icc-profile.png", png(1, 1, 8, 0, b"\x00\x2a", before=((b"iCCP", b"Profile\x00\x00" + zlib.compress(b"opaque profile")),)))
+    write("accepted", "exif.png", png(1, 1, 8, 0, b"\x00\x2a", before=((b"eXIf", b"MM\x00*"),)))
+    write("accepted", "unknown-ancillary.png", png(1, 1, 8, 0, b"\x00\x2a", before=((b"vpAg", b"opaque"),)))
 
     filtered = b"".join(b"\x00" + bytes(64 * 4) for _ in range(64))
     write("accepted", "oxipng-reduction.png", png(64, 64, 8, 6, filtered, level=0))
 
-    equivalent_source = png(2, 1, 8, 0, b"\x00\x0a\x14", level=0)
-    equivalent_candidate = png(2, 1, 8, 0, b"\x01\x0a\x0a", level=9, split_idat=True)
-    write("equivalent", "source.png", equivalent_source)
-    write("equivalent", "candidate.png", equivalent_candidate)
-    write("equivalent", "unchanged.png", equivalent_source)
     write("changed", "source.png", png(2, 1, 8, 0, b"\x00\x0a\x14"))
     write("changed", "candidate.png", png(2, 1, 8, 0, b"\x00\x0a\x15"))
 
@@ -114,13 +122,11 @@ def main() -> None:
     write("rejected", "trailing.png", base + b"trailing")
     write("rejected", "apng.png", png(1, 1, 8, 0, b"\x00\x2a", before=((b"acTL", struct.pack(">II", 1, 0)),)))
     write("rejected", "xmp.png", png(1, 1, 8, 0, b"\x00\x2a", before=((b"tEXt", b"XML:com.adobe.xmp\x00payload"),)))
+    write("rejected", "compressed-xmp.png", png(1, 1, 8, 0, b"\x00\x2a", before=((b"zTXt", b"XML:com.adobe.xmp\x00\x00" + zlib.compress(b"payload")),)))
+    write("rejected", "international-xmp.png", png(1, 1, 8, 0, b"\x00\x2a", before=((b"iTXt", b"XML:com.adobe.xmp\x00\x00\x00\x00\x00payload"),)))
     write("rejected", "cabx.png", png(1, 1, 8, 0, b"\x00\x2a", before=((b"caBX", b"manifest"),)))
-    write("rejected", "unknown.png", png(1, 1, 8, 0, b"\x00\x2a", before=((b"vpAg", b"unknown"),)))
-    write("rejected", "interlaced.png", png(1, 1, 8, 0, b"\x00\x2a", interlace=1))
-    write("rejected", "sixteen-bit.png", png(1, 1, 16, 0, b"\x00\x00\x2a"))
     write("rejected", "oversized-dimensions.png", png(32769, 1, 8, 0, b"\x00"))
     write("rejected", "invalid-filter.png", png(1, 1, 8, 0, b"\x05\x2a"))
-    write("rejected", "palette-out-of-range.png", png(1, 1, 1, 3, b"\x00\x80", palette=bytes((0, 0, 0))))
 
 
 if __name__ == "__main__":

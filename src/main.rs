@@ -6,6 +6,8 @@ mod input;
 mod limits;
 mod output;
 mod png;
+mod process;
+mod strategy;
 mod worker;
 
 use std::io::{self, Write};
