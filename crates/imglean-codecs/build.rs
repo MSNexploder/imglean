@@ -24,7 +24,6 @@ fn main() {
         "vendor/optipng/src/optipng/ioutil.c",
         "vendor/optipng/src/optipng/ratio.c",
         "vendor/optipng/src/opngreduc/opngreduc.c",
-        "vendor/optipng/src/pngxtern/pngxio.c",
         "vendor/optipng/src/pngxtern/pngxmem.c",
         "vendor/optipng/src/pngxtern/pngxset.c",
         "native/pngxread_png_only.c",

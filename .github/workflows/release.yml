@@ -82,10 +82,14 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: echo "MACOSX_DEPLOYMENT_TARGET=15.0" >> "$GITHUB_ENV"
-      - name: Select the single-configuration native generator
+      - name: Set the Intel macOS assembler target
+        if: matrix.target == 'x86_64-apple-darwin'
+        shell: bash
+        run: echo 'CMAKE_ASM_NASM_FLAGS=--pragma "macho build_version macos,15,0"' >> "$GITHUB_ENV"
+      - name: Use Rust's MSVC runtime for native dependencies
         if: runner.os == 'Windows'
         shell: pwsh
-        run: '"CMAKE_GENERATOR=Ninja" >> $env:GITHUB_ENV'
+        run: '"CMAKE_TOOLCHAIN_FILE=$env:GITHUB_WORKSPACE/ci/windows-msvc.cmake" >> $env:GITHUB_ENV'
       - name: Install build tools
         run: mise install rust python
       - name: Install Linux x86 assembler
@@ -95,7 +99,12 @@ jobs:
           sudo apt-get install --yes --no-install-recommends nasm
       - name: Install macOS x86 assembler
         if: matrix.target == 'x86_64-apple-darwin'
-        run: brew install yasm
+        shell: bash
+        run: |
+          if brew tap | grep -Fxq aws/tap; then
+            brew untap --force aws/tap
+          fi
+          brew install nasm
       - name: Run native qualification gate
         run: mise run check
       - name: Build target executable

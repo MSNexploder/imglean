@@ -21,6 +21,12 @@ ROOT = Path(__file__).resolve().parents[1]
 OPTIPNG_SOURCE_SHA256 = "c2579be58c2c66dae9d63154edcb3d427fef64cb00ec0aff079c9d156ec46f29"
 OPTIPNG_WINDOWS_SHA256 = "cdc632c21e11b2e0ba6f87a0df632f810827267f263b655002a849d3f87b06b2"
 LIBWEBP_SHA256 = "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564"
+PNGQUANT_SHA256 = {
+    "3.0.2": "33f8501d8b81f34cb6f028a5d06772b9d7940e0bc2b15a5d0bce138cb74233cb",
+    "3.0.3": "68a12bdd8825f9989f4ee9a6ab0b42727dae57728b939ef63453366697a07232",
+}
+PNGQUANT_RGB_VERSION = "0.8.52"
+PNGQUANT_BYTEMUCK_VERSION = "1.25.2"
 
 
 def run(arguments: Sequence[os.PathLike[str] | str], *, cwd: Path = ROOT) -> None:
@@ -51,8 +57,20 @@ def clone(repository: str, revision_file: str, destination: Path, *, submodules:
         run(["git", "submodule", "update", "--init", "--recursive", "--depth", "1"], cwd=destination)
 
 
+def replace_exact(path: Path, old: str, new: str, description: str) -> None:
+    contents = path.read_text(encoding="utf-8")
+    if contents.count(old) != 1:
+        raise RuntimeError(f"the pinned {description} changed")
+    path.write_text(contents.replace(old, new), encoding="utf-8")
+
+
 def cmake_configure(source: Path, build: Path, options: Sequence[str]) -> None:
-    run(["cmake", "-S", source, "-B", build, "-DCMAKE_BUILD_TYPE=Release", *options])
+    arguments: list[os.PathLike[str] | str] = ["cmake", "-S", source, "-B", build]
+    if os.name == "nt":
+        arguments.extend(["-G", "Ninja"])
+    arguments.append("-DCMAKE_BUILD_TYPE=Release")
+    arguments.extend(options)
+    run(arguments)
 
 
 def cmake_build(build: Path, *targets: str) -> None:
@@ -106,6 +124,9 @@ def build_optipng(directory: Path, binary: Path) -> None:
         with tarfile.open(archive) as contents:
             contents.extractall(directory, filter="data")
         source = directory / f"optipng-{version}"
+        libpng_cmake = source / "third_party/libpng/CMakeLists.txt"
+        replace_exact(libpng_cmake, "    pngpread.c\n", "", "OptiPNG progressive-read source list")
+        replace_exact(libpng_cmake, "    pngwtran.c\n", "", "OptiPNG write-transform source list")
         build = source / "build"
         cmake_configure(source, build, ["-DOPTIPNG_BUILD_TESTS=OFF"])
         cmake_build(build, "optipng")
@@ -115,9 +136,50 @@ def build_optipng(directory: Path, binary: Path) -> None:
 
 def build_pngquant(directory: Path, binary: Path, version: str) -> None:
     directory.mkdir(parents=True, exist_ok=True)
-    root = directory / version
-    run(["cargo", "install", "--locked", "--version", version, "--root", root, "pngquant"])
-    provider = executable(root / "bin/pngquant")
+    archive = directory / f"pngquant-{version}.crate"
+    download(
+        f"https://crates.io/api/v1/crates/pngquant/{version}/download",
+        archive,
+        PNGQUANT_SHA256[version],
+    )
+    with tarfile.open(archive) as contents:
+        contents.extractall(directory, filter="data")
+    source = directory / f"pngquant-{version}"
+    stale_sse_check = """if target_arch == "x86_64" ||
+       (target_arch == "x86" && cfg!(feature = "sse")) {"""
+    replace_exact(
+        source / "rust/build.rs",
+        stale_sse_check,
+        'if target_arch == "x86_64" {',
+        "pngquant SSE feature check",
+    )
+    manifest = source / "Cargo.toml"
+    run(
+        [
+            "cargo",
+            "update",
+            "--manifest-path",
+            manifest,
+            "--package",
+            "rgb",
+            "--precise",
+            PNGQUANT_RGB_VERSION,
+        ]
+    )
+    run(
+        [
+            "cargo",
+            "update",
+            "--manifest-path",
+            manifest,
+            "--package",
+            "bytemuck",
+            "--precise",
+            PNGQUANT_BYTEMUCK_VERSION,
+        ]
+    )
+    run(["cargo", "build", "--locked", "--release", "--manifest-path", manifest])
+    provider = executable(source / "target/release/pngquant")
     helper("test_pngquant_provider.py", "--binary", binary, "--provider", provider)
 
 
@@ -131,7 +193,8 @@ def build_jpegtran(directory: Path, binary: Path) -> Path:
         source,
         build,
         [
-            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.10",
+            "-DCMAKE_POLICY_DEFAULT_CMP0219=NEW",
             f"-DCMAKE_INSTALL_PREFIX={prefix}",
             "-DENABLE_SHARED=OFF",
             "-DENABLE_STATIC=ON",
@@ -156,7 +219,8 @@ def build_mozjpeg(directory: Path, binary: Path) -> None:
         source,
         build,
         [
-            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.10",
+            "-DCMAKE_POLICY_DEFAULT_CMP0219=NEW",
             "-DENABLE_SHARED=OFF",
             "-DENABLE_STATIC=ON",
             "-DPNG_SUPPORTED=OFF",
@@ -201,11 +265,20 @@ def build_jpegli(directory: Path, binary: Path, jpeg_prefix: Path | None) -> Non
     source = directory / "source"
     build = source / "build"
     clone("https://github.com/google/jpegli.git", "ci/jpegli-revision.txt", source, submodules=True)
+    old_policy = "cmake_policy(SET CMP0111 OLD)"
+    replace_exact(
+        source / "third_party/highway/CMakeLists.txt",
+        old_policy,
+        "cmake_policy(SET CMP0111 NEW)",
+        "Highway CMP0111 policy declaration",
+    )
     cmake_configure(
         source,
         build,
         [
+            "-DBUILD_SHARED_LIBS=OFF",
             "-DBUILD_TESTING=OFF",
+            "-DCMAKE_LINK_LIBRARIES_STRATEGY=REORDER_FREELY",
             "-DCMAKE_DISABLE_FIND_PACKAGE_GIF=TRUE",
             "-DCMAKE_DISABLE_FIND_PACKAGE_PNG=TRUE",
             f"-DCMAKE_PREFIX_PATH={jpeg_prefix}",
@@ -242,6 +315,10 @@ def build_libwebp(directory: Path, binary: Path) -> None:
         build,
         [
             "-DBUILD_SHARED_LIBS=OFF",
+            "-DCMAKE_DISABLE_FIND_PACKAGE_GIF=TRUE",
+            "-DCMAKE_DISABLE_FIND_PACKAGE_JPEG=TRUE",
+            "-DCMAKE_DISABLE_FIND_PACKAGE_PNG=TRUE",
+            "-DCMAKE_LINK_LIBRARIES_STRATEGY=REORDER_FREELY",
             "-DWEBP_BUILD_ANIM_UTILS=OFF",
             "-DWEBP_BUILD_CWEBP=ON",
             "-DWEBP_BUILD_DWEBP=OFF",
