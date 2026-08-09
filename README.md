@@ -8,9 +8,6 @@ Give it one or more images and it runs the applicable optimizers, validates
 their results, and keeps the smallest accepted candidate. The original file is
 always a candidate, so successful output is never larger than its source.
 
-> **Status:** ImgLean 0.6 is the complete first version in source. Release
-> binaries will be published after their target-specific qualification passes.
-
 ## Design intent
 
 Image optimization is fragmented across codecs, tools, APIs, and
@@ -30,14 +27,23 @@ quality policy. It does not try to become an image editor or asset pipeline.
 
 ## Install
 
-Once the first release is published, macOS users will be able to install the
-qualified Apple Silicon or Intel binary through Homebrew:
+On macOS 15 or newer, install the qualified Apple Silicon or Intel binary with
+Homebrew:
 
 ```sh
 brew install MSNexploder/tap/imglean
 ```
 
-Until then, build from source using the development instructions below.
+Target-specific archives for macOS, Linux, and Windows are available from
+[GitHub Releases](https://github.com/MSNexploder/imglean/releases/latest). The
+first release qualifies macOS 15 on Apple Silicon and Intel, Ubuntu 24.04 on
+x86-64, and Windows Server 2025 on x86-64.
+
+The minimal `linux/amd64` container is published separately:
+
+```sh
+docker pull ghcr.io/msnexploder/imglean:v0.6.0
+```
 
 ## Use
 
@@ -123,17 +129,15 @@ ImgLean does not treat them as sandboxed or control their network behavior.
 Provider-specific behavior is documented under
 [docs/providers](docs/providers/).
 
-## Build from source
+## Development
 
-ImgLean uses mise to install and select its development toolchain:
+ImgLean uses mise to install and select its development toolchain. Contributors
+can run the complete local gate with:
 
 ```sh
 mise install
-mise exec -- cargo build --locked --release
 mise run check
 ```
-
-The resulting executable is `target/release/imglean`.
 
 `mise run check` is the canonical development gate. It checks formatting,
 runs warnings-as-errors linting, executes the full test suite, and verifies
