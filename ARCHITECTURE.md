@@ -1,151 +1,99 @@
 # ImgLean Architecture
 
-> [!IMPORTANT]
-> This document describes the implemented version 0.6 component boundaries.
+This document describes the stable system shape of version 0.6. Exact format,
+provider, filesystem, and resource behavior belongs to the
+[focused contracts](docs/contracts/).
 
 ## System shape
 
-ImgLean has one public controller and two provider execution forms:
+ImgLean is organized around five responsibilities:
 
-- The **controller** parses the CLI, resolves strategies, preflights the complete
-  batch, validates sources and candidates, selects winners, and is the only
-  component allowed to publish outputs.
-- A **bundled worker** is a short-lived private role of the same executable. It
-  runs one linked OxiPNG, OptiPNG, jpegtran, MozJPEG, Jpegli, libwebp,
-  image-webp, libavif/libaom, or ravif/rav1e strategy against
-  one controller-created private input.
-- A supported **external provider** is a separately installed executable used
-  for pngquant or as an explicit override, with the same private-input/private-
-  candidate boundary.
+- The **controller** owns the public CLI and the complete invocation.
+- The **strategy registry** defines applicable optimizers and stable order.
+- Short-lived **workers** run one strategy against one private input.
+- **Validators** inspect sources and candidates independently from providers.
+- The **output layer** is the only component allowed to publish a winner.
 
-Process separation isolates crashes and enables bounded diagnostics and elapsed
-time supervision. It is not a security sandbox or portable hard memory limit;
-providers run with the user's authority.
+Bundled strategies run through a private worker role of the ImgLean executable.
+Supported external executables use the same private-input and private-candidate
+boundary. Providers never receive the requested source or destination paths.
 
-Integration form is assessed in the order safely embeddable, linkable, then
-callable. OxiPNG uses its safe Rust API. OptiPNG uses a narrow PNG-only wrapper
-around its vendored engine. MozJPEG and Jpegli use Rust-facing native wrappers,
-and jpegtran uses MozJPEG's coefficient API behind one audited FFI boundary.
-libwebp uses a narrow audited FFI boundary, image-webp is safe Rust,
-libavif/libaom uses its Rust-facing native wrapper, and ravif supplies the
-independent Rust AV1 encoder.
-All linked code runs only in the disposable worker process, so linking does not
-remove crash and timeout isolation. pngquant remains external because of its
-GPL/commercial licensing boundary.
+Worker processes isolate provider crashes and let the controller supervise
+elapsed time and diagnostics. They are not a security sandbox or a hard memory
+containment boundary; providers still run with the user's authority.
 
-## Registry and discovery
+## Data flow
 
-The ordered registry fixes strategy identity and order:
+For one invocation, the controller:
 
-1. `oxipng-libdeflate` — bundled;
-2. `oxipng-zopfli` — bundled;
-3. `optipng` — bundled OptiPNG for PNG;
-4. `pngquant` — external pngquant for PNG at numeric quality;
-5. `jpegtran` — bundled lossless JPEG coefficient optimization;
-6. `mozjpeg` — bundled MozJPEG for JPEG at numeric quality;
-7. `jpegli` — bundled Jpegli for JPEG at numeric quality;
-8. `libwebp` — bundled libwebp for lossless or numeric-quality WebP;
-9. `image-webp` — bundled lossless image-webp;
-10. `avif-aom` — bundled libavif/libaom at numeric quality; and
-11. `avif-rav1e` — bundled ravif/rav1e at numeric quality.
+1. Parses the CLI and resolves the stable strategy registry.
+2. Preflights the complete input and output mapping before publication.
+3. Captures and validates each source under configured resource limits.
+4. Adds the validated source bytes as the baseline candidate.
+5. Runs enabled applicable strategies against private copies of that capture.
+6. Independently validates candidates in registry order.
+7. Selects a new winner only when a candidate is strictly smaller.
+8. Publishes the complete winner in output mode, or reports possible savings in
+   check mode.
+9. Reports the per-input strategy results and invocation summary.
 
-Compatible bundled strategies are enabled unless disabled. A configured
-external executable overrides its bundled implementation. Without an override,
-only the unbundled pngquant strategy searches `PATH`. libwebp additionally
-supports an explicit capability-probed `cwebp` override. External providers are
-probed once under a short deadline and retained by canonical path for the
-invocation. Probes check CLI identity and behavior-affecting capabilities;
-provider version text is not a compatibility boundary. Numeric quality leaves all lossless strategies
-applicable and enables the lossy providers; lossless quality marks them not
-applicable without probing. Automatic absence or capability mismatch skips a
-strategy; an explicitly required provider turns the same
-condition into structural preflight failure. Discovery never downloads or
-changes provider software.
+Inputs are processed sequentially. Strategies for one input may run in
+parallel, but completion order never controls validation, reporting, or
+tie-breaking.
 
-## Controller responsibilities
+## Ownership boundaries
 
-The controller owns complete path preflight and, in output mode, destination
-preflight, bounded source
-capture, the source baseline, stable strategy scheduling, process supervision,
-candidate validation, winner selection, publication, diagnostics, and
-invocation-wide limits. Workers receive neither source paths nor requested
-destination paths.
+The controller owns:
 
-Source and candidate bytes pass through the same bounded validator for their
-declared format. PNG, JPEG, WebP, and AVIF validators check their documented container
-subset, complete decode, resource bounds, and C2PA/XMP refusal. Candidate
-dimensions must match the source. The provider's audited fidelity and metadata
-configuration—not a second pixel, perceptual-quality, or ancillary
-comparison—establishes transformation semantics.
+- input and destination preflight;
+- bounded source capture;
+- the baseline candidate;
+- strategy scheduling and process supervision;
+- candidate validation and winner selection;
+- temporary artifact cleanup;
+- output publication; and
+- user-facing diagnostics and exit status.
 
-The controller passes the common `--strip-metadata` request into each strategy
-mapping. A strategy uses its native removal control when one exists and remains
-eligible when one does not. The controller does not rewrite a candidate or
-inspect it for successful metadata removal. The baseline remains the captured
-source bytes, so it can still win unchanged when every candidate is larger,
-equal, absent, or rejected.
+Workers own only one strategy attempt and its private artifacts. A provider may
+produce bytes or fail; it cannot accept its own result, select the winner, or
+publish output.
 
-## Per-input flow
+Validators are format-specific but provider-independent. They enforce the
+documented structural, decode, dimension, resource, C2PA, and XMP gates. The
+audited provider configuration establishes transformation semantics such as
+lossless behavior and metadata handling.
 
-1. Resolve the strategy registry and preflight every input plus any requested
-   output mapping.
-2. Read the already-open input under portable before/after state checks.
-3. Validate the captured source and admit its bytes as the baseline.
-4. Submit enabled strategies in registry order to the bounded per-input worker
-   pool. Each receives a fresh private copy of those bytes and a reserved absent
-   candidate path.
-5. Supervise each process, bound diagnostics and output, clean its separately
-   owned private artifacts, collect every result, and independently validate
-   candidates in registry order.
-6. Replace the current winner only when the candidate is strictly smaller.
-7. In output mode, write and revalidate the winner in the output directory,
-   then publish it by same-directory rename, replacing an existing regular
-   destination. In check mode, record whether the winner is smaller and publish
-   nothing.
-8. Report the winner and the registry rows for that input's format, then
-   continue with the next input.
+## Failure model
 
-The baseline is first, so it wins equal-size ties. Worker completion order is
-discarded before validation and selection; stable registry order remains the
-only strategy tie-breaker. Inputs, winner publication, and reporting remain
-sequential even though multiple provider processes may run for one input.
+Sources, paths, provider output, and provider diagnostics are untrusted.
+Structural preflight failures stop the invocation before publication. Later
+per-input failures may allow already completed inputs to remain published.
 
-## Failure and trust boundaries
+An optional optimizer failure normally excludes only that candidate and emits a
+warning; the baseline and other strategies stay in the race. A provider that
+the user explicitly requires must pass discovery before any output is created.
 
-Source files, provider output, paths, and diagnostics are untrusted. Provider
-start failure, nonzero exit, timeout, oversized diagnostics, unreadable or
-invalid output, and later executable failure warn and exclude only that
-candidate. Successful exit with no output is a normal no-improvement result.
-Mutation of the controller-owned private input or inability to clean tracked
-current-run artifacts fails the input. A required provider's discovery failure
-aborts before any destination is created.
-
-The controller bounds bytes, allocations, input count, temporary storage,
-diagnostics, and monitored elapsed time. It does not promise hard address-space,
-CPU, descendant-process, hostile path-race, crash-cleanup, or machine-wide
-resource containment.
-
-The CLI may override the bounded per-strategy worker deadline. Bundled OxiPNG
-receives a shorter internal deadline so the controller retains cleanup time;
-validation, discovery, and invocation-wide deadlines remain separate.
+The controller bounds parsing, decoding, captured bytes, candidate bytes,
+temporary storage, diagnostics, concurrency, input count, and monitored elapsed
+time. The exact enforcement model and acknowledged limits are defined in
+[docs/contracts/LIMITS.md](docs/contracts/LIMITS.md).
 
 ## Output and determinism
 
-In output mode the original validated basename maps into one required canonical
-output directory. The controller never writes a source or permits an output to
-alias an input. It publishes only a complete revalidated temporary file through
-a same-directory replacing rename. Outputs receive ordinary new-file filesystem
-metadata rather than metadata copied from the replaced destination. Check mode
-uses an invocation-owned temporary directory for private provider artifacts and
-attempts to remove it without invoking the output publication layer.
+The validated original basename maps into one explicit output directory. The
+controller refuses input aliases and publishes only a complete revalidated
+temporary file through the platform-specific output contract. Source files are
+never replaced.
 
-Given the same accepted candidate set, encoded sizes and fixed registry order
-fully determine the winner. Provider failures and timeouts may alter that set
-and are reported. Release manifests record the registry, provider settings,
-dependency lock, toolchain, target, native tools, and build flags; bit-for-bit
-binary reproducibility is not claimed.
+The baseline appears first and wins equal-size ties. Given the same accepted
+candidate set, encoded sizes and registry order fully determine the winner.
+Provider failure or timeout can change that candidate set and is always
+reported.
 
-## Focused contracts
+Release artifacts record the inputs needed to audit and reconstruct a build.
+Bit-for-bit binary reproducibility is not claimed.
+
+## Detailed contracts
 
 - [Input and batch](docs/contracts/INPUT_AND_BATCH.md)
 - [PNG validation](docs/contracts/PNG.md)
@@ -156,5 +104,6 @@ binary reproducibility is not claimed.
 - [Output publication](docs/contracts/OUTPUT.md)
 - [Resource limits](docs/contracts/LIMITS.md)
 
-The private worker role and supported external adapters are implementation
-contracts, not a general plugin or compatibility interface.
+Provider-specific integrations are documented under
+[docs/providers](docs/providers/). The private worker protocol and supported
+external adapters are implementation contracts, not a public plugin API.
