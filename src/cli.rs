@@ -12,10 +12,13 @@ const HELP: &str = concat!(
     "ImgLean ",
     env!("CARGO_PKG_VERSION"),
     "\n\
-Make supported PNG, JPEG, WebP, and AVIF images lean without replacing source files.\n\n\
-Usage: imglean --output OUTPUT_DIRECTORY INPUT...\n\n\
+Remove avoidable encoding overhead without changing image formats.\n\n\
+Usage:\n\
+  imglean --output OUTPUT_DIRECTORY INPUT...\n\
+  imglean --check INPUT...\n\n\
 Options:\n\
   --output DIRECTORY       Existing directory for separate output files\n\
+  --check                  Report available reductions without writing outputs\n\
   --jobs N                 Run up to N strategy workers (1-3; default: auto)\n\
   --timeout SECONDS        Per-strategy timeout (6-600; default: 60)\n\
   --quality VALUE          lossless or 1-100 (default: lossless)\n\
@@ -38,10 +41,16 @@ const VERSION: &str = concat!("imglean ", env!("CARGO_PKG_VERSION"), "\n");
 
 #[derive(Debug)]
 pub struct Arguments {
-    pub output_directory: PathBuf,
+    pub mode: Mode,
     pub inputs: Vec<PathBuf>,
     pub strategies: Selection,
     pub jobs: usize,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum Mode {
+    Write(PathBuf),
+    Check,
 }
 
 #[derive(Debug)]
@@ -68,6 +77,7 @@ where
     let mut arguments = arguments.into_iter();
     let _program = arguments.next();
     let mut output_directory = None;
+    let mut check = false;
     let mut inputs = Vec::new();
     let mut strategies = Selection::default();
     let mut jobs = None;
@@ -88,6 +98,7 @@ where
                 || jobs.is_some()
                 || strategy_timeout.is_some()
                 || quality.is_some()
+                || check
                 || arguments.next().is_some()
             {
                 return usage("--help cannot be combined with other arguments");
@@ -102,6 +113,7 @@ where
                 || jobs.is_some()
                 || strategy_timeout.is_some()
                 || quality.is_some()
+                || check
                 || arguments.next().is_some()
             {
                 return usage("--version cannot be combined with other arguments");
@@ -120,6 +132,14 @@ where
                 return usage("--output requires a nonempty directory");
             }
             output_directory = Some(PathBuf::from(directory));
+            continue;
+        }
+
+        if options && argument == OsStr::new("--check") {
+            if check {
+                return usage("--check may be specified only once");
+            }
+            check = true;
             continue;
         }
 
@@ -209,8 +229,11 @@ where
         }
     }
 
-    let Some(output_directory) = output_directory else {
-        return usage("--output is required");
+    let mode = match (output_directory, check) {
+        (Some(_), true) => return usage("--check cannot be combined with --output"),
+        (Some(output_directory), false) => Mode::Write(output_directory),
+        (None, true) => Mode::Check,
+        (None, false) => return usage("--output or --check is required"),
     };
     if inputs.is_empty() {
         return usage("at least one input file is required");
@@ -226,7 +249,7 @@ where
     strategies.timeout = strategy_timeout.unwrap_or(DEFAULT_STRATEGY_TIMEOUT);
 
     Ok(Parsed::Run(Arguments {
-        output_directory,
+        mode,
         inputs,
         strategies,
         jobs: jobs.unwrap_or_else(default_jobs),
@@ -341,7 +364,7 @@ mod tests {
         else {
             panic!("expected runnable arguments");
         };
-        assert_eq!(arguments.output_directory, PathBuf::from("out"));
+        assert_eq!(arguments.mode, Mode::Write(PathBuf::from("out")));
         assert_eq!(
             arguments.inputs,
             [PathBuf::from("a.png"), PathBuf::from("b.png")]
@@ -386,16 +409,39 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_output_or_input() {
+    fn requires_a_mode_and_at_least_one_input() {
         assert_eq!(
             parse_strings(&["imglean", "a.png"]).unwrap_err().message(),
-            "--output is required"
+            "--output or --check is required"
         );
         assert_eq!(
             parse_strings(&["imglean", "--output", "out"])
                 .unwrap_err()
                 .message(),
             "at least one input file is required"
+        );
+    }
+
+    #[test]
+    fn parses_check_as_a_write_free_mode() {
+        let Parsed::Run(arguments) =
+            parse_strings(&["imglean", "--check", "assets/a.png"]).unwrap()
+        else {
+            panic!("expected runnable arguments");
+        };
+        assert_eq!(arguments.mode, Mode::Check);
+        assert_eq!(arguments.inputs, [PathBuf::from("assets/a.png")]);
+        assert_eq!(
+            parse_strings(&["imglean", "--check", "--output", "out", "assets/a.png"])
+                .unwrap_err()
+                .message(),
+            "--check cannot be combined with --output"
+        );
+        assert_eq!(
+            parse_strings(&["imglean", "--check", "--check", "assets/a.png"])
+                .unwrap_err()
+                .message(),
+            "--check may be specified only once"
         );
     }
 

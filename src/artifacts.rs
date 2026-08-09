@@ -10,6 +10,7 @@ static NEXT_ARTIFACT: AtomicU64 = AtomicU64::new(0);
 pub struct Artifacts {
     directory: PathBuf,
     owned: Vec<PathBuf>,
+    owns_directory: bool,
 }
 
 impl Artifacts {
@@ -17,7 +18,37 @@ impl Artifacts {
         Self {
             directory,
             owned: Vec::new(),
+            owns_directory: false,
         }
+    }
+
+    pub fn temporary() -> io::Result<Self> {
+        let parent = std::env::temp_dir();
+        for _ in 0..128 {
+            let sequence = NEXT_ARTIFACT.fetch_add(1, Ordering::Relaxed);
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |duration| duration.as_nanos());
+            let directory = parent.join(format!(
+                "imglean-check-{}-{timestamp:x}-{sequence:x}",
+                std::process::id()
+            ));
+            match fs::create_dir(&directory) {
+                Ok(()) => {
+                    return Ok(Self {
+                        directory,
+                        owned: Vec::new(),
+                        owns_directory: true,
+                    });
+                }
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "could not allocate a unique ImgLean temporary directory",
+        ))
     }
 
     pub fn directory(&self) -> &Path {
@@ -94,6 +125,9 @@ impl Drop for Artifacts {
         for path in self.owned.drain(..) {
             let _ = fs::remove_file(path);
         }
+        if self.owns_directory {
+            let _ = fs::remove_dir(&self.directory);
+        }
     }
 }
 
@@ -133,6 +167,18 @@ mod tests {
         }
         assert!(!reserved.exists());
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn temporary_artifacts_remove_their_directory() {
+        let directory;
+        {
+            let mut artifacts = Artifacts::temporary().unwrap();
+            directory = artifacts.directory().to_path_buf();
+            let _ = artifacts.create("test").unwrap();
+            assert!(directory.is_dir());
+        }
+        assert!(!directory.exists());
     }
 
     fn test_directory() -> PathBuf {

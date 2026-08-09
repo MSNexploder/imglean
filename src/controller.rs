@@ -98,11 +98,25 @@ fn run_with_strategies(
         }
     }
 
-    let mut artifacts = Artifacts::new(batch.output_directory.clone());
+    let check_mode = batch.output_directory.is_none();
+    let mut artifacts = match &batch.output_directory {
+        Some(directory) => Artifacts::new(directory.clone()),
+        None => match Artifacts::temporary() {
+            Ok(artifacts) => artifacts,
+            Err(_) => {
+                write_stderr(
+                    &mut stderr,
+                    "imglean: cannot create the check-mode temporary directory\n",
+                );
+                return 1;
+            }
+        },
+    };
     let mut succeeded = 0usize;
     let mut failed = 0usize;
     let mut warnings = 0usize;
     let mut processed = 0usize;
+    let mut optimizations_available = 0usize;
     let mut stopped = false;
 
     for input in &mut batch.inputs {
@@ -133,6 +147,9 @@ fn run_with_strategies(
                 attempts,
             } => {
                 succeeded += 1;
+                if check_mode && output_bytes < source_bytes {
+                    optimizations_available += 1;
+                }
                 warnings += warning_count(&attempts);
                 format_success(input, source_bytes, output_bytes, winner, &attempts)
             }
@@ -181,11 +198,19 @@ fn run_with_strategies(
     let not_processed = batch.inputs.len().saturating_sub(processed);
     write_stderr(
         &mut stderr,
-        &format_summary(succeeded, failed, warnings, not_processed),
+        &format_summary(
+            succeeded,
+            failed,
+            warnings,
+            not_processed,
+            check_mode.then_some(optimizations_available),
+        ),
     );
 
     if failed > 0 || stopped {
         1
+    } else if check_mode && optimizations_available > 0 {
+        4
     } else if warnings > 0 {
         3
     } else {
@@ -319,6 +344,14 @@ fn process_input(
             attempts,
         };
     }
+    if input.destination.is_none() {
+        return InputOutcome::Success {
+            source_bytes: source.encoded_bytes(),
+            output_bytes,
+            winner: winner_strategy,
+            attempts,
+        };
+    }
     let prepared = match output::prepare(artifacts, &source, winner) {
         Ok(prepared) => prepared,
         Err(error) => {
@@ -328,7 +361,11 @@ fn process_input(
             };
         }
     };
-    if let Err(error) = output::publish(artifacts, prepared, &input.destination) {
+    let destination = input
+        .destination
+        .as_deref()
+        .expect("write mode preflight assigns a destination");
+    if let Err(error) = output::publish(artifacts, prepared, destination) {
         return InputOutcome::Failure {
             reason: output_reason(&error),
             attempts,
@@ -512,12 +549,16 @@ fn format_success(
             (winner == Some(attempt.strategy)).then_some((source_bytes, output_bytes)),
         );
     }
-    let _ = writeln!(
-        report,
-        "     {:<24} {}\n",
-        "output",
-        escape_path(input.destination.as_os_str())
-    );
+    if let Some(destination) = &input.destination {
+        let _ = writeln!(
+            report,
+            "     {:<24} {}\n",
+            "output",
+            escape_path(destination.as_os_str())
+        );
+    } else {
+        report.push('\n');
+    }
     report
 }
 
@@ -608,12 +649,12 @@ fn warning_count(attempts: &[Attempt]) -> usize {
 }
 
 fn input_label(input: &PreflightInput) -> String {
-    escape_path(
-        input
-            .destination
-            .file_name()
-            .unwrap_or(input.destination.as_os_str()),
-    )
+    match &input.destination {
+        Some(destination) => {
+            escape_path(destination.file_name().unwrap_or(destination.as_os_str()))
+        }
+        None => escape_path(input.canonical_source.as_os_str()),
+    }
 }
 
 fn format_bytes(bytes: usize) -> String {
@@ -633,8 +674,23 @@ fn format_summary(
     failed: usize,
     warnings: usize,
     not_processed: usize,
+    optimizations_available: Option<usize>,
 ) -> String {
-    let mut parts = vec![format!("{succeeded} succeeded")];
+    let mut parts = vec![if optimizations_available.is_some() {
+        format!("{succeeded} checked")
+    } else {
+        format!("{succeeded} succeeded")
+    }];
+    if let Some(available) = optimizations_available
+        && available > 0
+    {
+        let label = if available == 1 {
+            "optimization available"
+        } else {
+            "optimizations available"
+        };
+        parts.push(format!("{available} {label}"));
+    }
     if failed > 0 {
         parts.push(format!("{failed} failed"));
     }
@@ -716,6 +772,53 @@ mod tests {
             String::from_utf8(stdout)
                 .unwrap()
                 .contains("-> baseline                 67 bytes  winner")
+        );
+    }
+
+    #[test]
+    fn check_reports_a_smaller_candidate_without_publishing() {
+        let directory = TestDirectory::new();
+        let source = directory.path.join("source.png");
+        let candidate = valid_png();
+        let source_bytes = with_empty_idats(&candidate, 3);
+        fs::write(&source, &source_bytes).unwrap();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let status = run_with_strategies(
+            check_arguments(vec![source.clone()]),
+            &mut stdout,
+            &mut stderr,
+            MAX_AGGREGATE_SOURCE_BYTES,
+            INVOCATION_TIMEOUT,
+            vec![
+                RegistryEntry {
+                    id: StrategyId::OxipngLibdeflateV1,
+                    state: RegistryState::Runnable(Execution::Bundled),
+                },
+                RegistryEntry {
+                    id: StrategyId::OxipngZopfliV1,
+                    state: RegistryState::Runnable(Execution::Bundled),
+                },
+            ],
+            |_, _, strategy, _| match strategy.id {
+                StrategyId::OxipngLibdeflateV1 => StrategyResult::Candidate(candidate.clone()),
+                StrategyId::OxipngZopfliV1 => {
+                    StrategyResult::Warning("injected warning".to_owned())
+                }
+                _ => StrategyResult::NoCandidate,
+            },
+        );
+
+        assert_eq!(status, 4);
+        assert_eq!(fs::read(&source).unwrap(), source_bytes);
+        assert_eq!(fs::read_dir(&directory.path).unwrap().count(), 1);
+        let stdout = String::from_utf8(stdout).unwrap();
+        assert!(stdout.contains("winner; saved"));
+        assert!(!stdout.contains("     output"));
+        assert_eq!(
+            String::from_utf8(stderr).unwrap(),
+            "Summary: 1 checked, 1 optimization available, 1 warning\n"
         );
     }
 
@@ -1346,10 +1449,14 @@ mod tests {
         assert_eq!(format_bytes(999), "999");
         assert_eq!(format_bytes(1_234), "1,234");
         assert_eq!(format_bytes(12_345_678), "12,345,678");
-        assert_eq!(format_summary(8, 0, 0, 0), "Summary: 8 succeeded\n");
+        assert_eq!(format_summary(8, 0, 0, 0, None), "Summary: 8 succeeded\n");
         assert_eq!(
-            format_summary(8, 1, 2, 3),
+            format_summary(8, 1, 2, 3, None),
             "Summary: 8 succeeded, 1 failed, 2 warnings, 3 not processed\n"
+        );
+        assert_eq!(
+            format_summary(8, 0, 0, 0, Some(2)),
+            "Summary: 8 checked, 2 optimizations available\n"
         );
     }
 
@@ -1369,7 +1476,16 @@ mod tests {
 
     fn arguments(output_directory: PathBuf, inputs: Vec<PathBuf>) -> Arguments {
         Arguments {
-            output_directory,
+            mode: crate::cli::Mode::Write(output_directory),
+            inputs,
+            strategies: crate::strategy::Selection::default(),
+            jobs: 1,
+        }
+    }
+
+    fn check_arguments(inputs: Vec<PathBuf>) -> Arguments {
+        Arguments {
+            mode: crate::cli::Mode::Check,
             inputs,
             strategies: crate::strategy::Selection::default(),
             jobs: 1,

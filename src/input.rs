@@ -5,20 +5,20 @@ use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use crate::cli::Arguments;
+use crate::cli::{Arguments, Mode};
 use crate::image::ImageFormat;
 use crate::limits::MAX_SOURCE_BYTES;
 
 #[derive(Debug)]
 pub struct Batch {
-    pub output_directory: PathBuf,
+    pub output_directory: Option<PathBuf>,
     pub inputs: Vec<PreflightInput>,
 }
 
 #[derive(Debug)]
 pub struct PreflightInput {
     pub canonical_source: PathBuf,
-    pub destination: PathBuf,
+    pub destination: Option<PathBuf>,
     pub format: ImageFormat,
     source: File,
     sidecars: [PathBuf; 2],
@@ -41,16 +41,24 @@ pub enum CaptureError {
 pub fn preflight(arguments: Arguments) -> Result<Batch, PreflightError> {
     let working_directory =
         std::env::current_dir().map_err(|_| PreflightError::WorkingDirectory)?;
-    let requested_output = absolute_from(&working_directory, &arguments.output_directory);
-    let output_directory = fs::canonicalize(&requested_output)
-        .map_err(|_| PreflightError::OutputDirectory("cannot resolve the output directory"))?;
-    let output_metadata = fs::metadata(&output_directory)
-        .map_err(|_| PreflightError::OutputDirectory("cannot inspect the output directory"))?;
-    if !output_metadata.is_dir() {
-        return Err(PreflightError::OutputDirectory(
-            "the output path is not a directory",
-        ));
-    }
+    let output_directory = match arguments.mode {
+        Mode::Write(requested_output) => {
+            let requested_output = absolute_from(&working_directory, &requested_output);
+            let output_directory = fs::canonicalize(&requested_output).map_err(|_| {
+                PreflightError::OutputDirectory("cannot resolve the output directory")
+            })?;
+            let output_metadata = fs::metadata(&output_directory).map_err(|_| {
+                PreflightError::OutputDirectory("cannot inspect the output directory")
+            })?;
+            if !output_metadata.is_dir() {
+                return Err(PreflightError::OutputDirectory(
+                    "the output path is not a directory",
+                ));
+            }
+            Some(output_directory)
+        }
+        Mode::Check => None,
+    };
 
     let mut canonical_sources = HashSet::new();
     let mut folded_destinations = HashSet::new();
@@ -97,21 +105,26 @@ pub fn preflight(arguments: Arguments) -> Result<Batch, PreflightError> {
             });
         }
 
-        let folded = basename
-            .to_str()
-            .ok_or_else(|| PreflightError::Input {
-                path: argument.clone(),
-                reason: "the input basename is not printable ASCII",
-            })?
-            .to_ascii_lowercase();
-        if !folded_destinations.insert(folded) {
-            return Err(PreflightError::Input {
-                path: argument,
-                reason: "the output basename collides after ASCII case folding",
-            });
-        }
-        let destination = output_directory.join(&basename);
-        validate_destination(&destination)?;
+        let destination = if let Some(output_directory) = &output_directory {
+            let folded = basename
+                .to_str()
+                .ok_or_else(|| PreflightError::Input {
+                    path: argument.clone(),
+                    reason: "the input basename is not printable ASCII",
+                })?
+                .to_ascii_lowercase();
+            if !folded_destinations.insert(folded) {
+                return Err(PreflightError::Input {
+                    path: argument,
+                    reason: "the output basename collides after ASCII case folding",
+                });
+            }
+            let destination = output_directory.join(&basename);
+            validate_destination(&destination)?;
+            Some(destination)
+        } else {
+            None
+        };
         let sidecars = sidecar_paths(&canonical_source).ok_or_else(|| PreflightError::Input {
             path: argument.clone(),
             reason: "the canonical input has no filename",
@@ -126,19 +139,21 @@ pub fn preflight(arguments: Arguments) -> Result<Batch, PreflightError> {
     }
 
     for input in &inputs {
-        if fs::symlink_metadata(&input.destination).is_ok() {
+        if let Some(destination) = &input.destination
+            && fs::symlink_metadata(destination).is_ok()
+        {
             for source in &inputs {
-                match same_file::is_same_file(&input.destination, &source.canonical_source) {
+                match same_file::is_same_file(destination, &source.canonical_source) {
                     Ok(true) => {
                         return Err(PreflightError::Destination {
-                            path: input.destination.clone(),
+                            path: destination.clone(),
                             reason: "the destination aliases an input",
                         });
                     }
                     Ok(false) => {}
                     Err(_) => {
                         return Err(PreflightError::Destination {
-                            path: input.destination.clone(),
+                            path: destination.clone(),
                             reason: "cannot compare the destination with the inputs",
                         });
                     }
@@ -340,7 +355,7 @@ mod tests {
         fs::write(&source, b"bytes").unwrap();
 
         let batch = preflight(Arguments {
-            output_directory: output_directory.clone(),
+            mode: Mode::Write(output_directory.clone()),
             inputs: vec![source.clone()],
             strategies: crate::strategy::Selection::default(),
             jobs: 1,
@@ -352,9 +367,11 @@ mod tests {
         );
         assert_eq!(
             batch.inputs[0].destination,
-            fs::canonicalize(output_directory)
-                .unwrap()
-                .join("Photo.PNG")
+            Some(
+                fs::canonicalize(output_directory)
+                    .unwrap()
+                    .join("Photo.PNG")
+            )
         );
     }
 
@@ -371,7 +388,7 @@ mod tests {
 
         assert!(matches!(
             preflight(Arguments {
-                output_directory: output.clone(),
+                mode: Mode::Write(output.clone()),
                 inputs: vec![first.clone(), second],
                 strategies: crate::strategy::Selection::default(),
                 jobs: 1,
@@ -381,7 +398,7 @@ mod tests {
         ));
         assert!(matches!(
             preflight(Arguments {
-                output_directory: output,
+                mode: Mode::Write(output),
                 inputs: vec![first.clone(), first],
                 strategies: crate::strategy::Selection::default(),
                 jobs: 1,
@@ -399,13 +416,35 @@ mod tests {
         fs::write(&first, b"same").unwrap();
         fs::hard_link(&first, &second).unwrap();
         let batch = preflight(Arguments {
-            output_directory: output,
+            mode: Mode::Write(output),
             inputs: vec![first, second],
             strategies: crate::strategy::Selection::default(),
             jobs: 1,
         })
         .unwrap();
         assert_eq!(batch.inputs.len(), 2);
+    }
+
+    #[test]
+    fn check_mode_needs_no_output_and_allows_repeated_basenames() {
+        let directory = TestDirectory::new();
+        let first_directory = directory.create_directory("one");
+        let second_directory = directory.create_directory("two");
+        let first = first_directory.join("image.png");
+        let second = second_directory.join("image.png");
+        fs::write(&first, b"first").unwrap();
+        fs::write(&second, b"second").unwrap();
+
+        let batch = preflight(Arguments {
+            mode: Mode::Check,
+            inputs: vec![first, second],
+            strategies: crate::strategy::Selection::default(),
+            jobs: 1,
+        })
+        .unwrap();
+
+        assert!(batch.output_directory.is_none());
+        assert!(batch.inputs.iter().all(|input| input.destination.is_none()));
     }
 
     #[test]
@@ -417,7 +456,7 @@ mod tests {
         fs::write(output.join("a.png"), b"existing").unwrap();
         assert!(
             preflight(Arguments {
-                output_directory: output,
+                mode: Mode::Write(output),
                 inputs: vec![source],
                 strategies: crate::strategy::Selection::default(),
                 jobs: 1,
@@ -454,7 +493,7 @@ mod tests {
 
         assert!(matches!(
             preflight(Arguments {
-                output_directory: output,
+                mode: Mode::Write(output),
                 inputs: vec![source.clone()],
                 strategies: crate::strategy::Selection::default(),
                 jobs: 1,
@@ -464,7 +503,7 @@ mod tests {
         ));
         assert!(matches!(
             preflight(Arguments {
-                output_directory: source_directory,
+                mode: Mode::Write(source_directory),
                 inputs: vec![source],
                 strategies: crate::strategy::Selection::default(),
                 jobs: 1,
@@ -487,7 +526,7 @@ mod tests {
         symlink(&target, &link).unwrap();
         assert!(matches!(
             preflight(Arguments {
-                output_directory: output.clone(),
+                mode: Mode::Write(output.clone()),
                 inputs: vec![link],
                 strategies: crate::strategy::Selection::default(),
                 jobs: 1,
@@ -499,7 +538,7 @@ mod tests {
         symlink(directory.path.join("missing"), output.join("target.png")).unwrap();
         assert!(matches!(
             preflight(Arguments {
-                output_directory: output,
+                mode: Mode::Write(output),
                 inputs: vec![target],
                 strategies: crate::strategy::Selection::default(),
                 jobs: 1,
@@ -515,7 +554,7 @@ mod tests {
         let source = directory.path.join("photo.png");
         fs::write(&source, b"source").unwrap();
         let mut batch = preflight(Arguments {
-            output_directory: output.clone(),
+            mode: Mode::Write(output.clone()),
             inputs: vec![source.clone()],
             strategies: crate::strategy::Selection::default(),
             jobs: 1,
@@ -535,7 +574,7 @@ mod tests {
         fs::write(&source, b"source").unwrap();
         fs::write(directory.path.join("photo.c2pa"), b"manifest").unwrap();
         let mut batch = preflight(Arguments {
-            output_directory: output,
+            mode: Mode::Write(output),
             inputs: vec![source],
             strategies: crate::strategy::Selection::default(),
             jobs: 1,
@@ -549,7 +588,7 @@ mod tests {
         fs::remove_file(directory.path.join("photo.c2pa")).unwrap();
         fs::write(directory.path.join("photo.png.c2pa"), b"manifest").unwrap();
         let mut batch = preflight(Arguments {
-            output_directory: directory.create_directory("second-out"),
+            mode: Mode::Write(directory.create_directory("second-out")),
             inputs: vec![directory.path.join("photo.png")],
             strategies: crate::strategy::Selection::default(),
             jobs: 1,
@@ -575,7 +614,7 @@ mod tests {
         symlink(&real, &linked_directory).unwrap();
 
         let batch = preflight(Arguments {
-            output_directory: output.clone(),
+            mode: Mode::Write(output.clone()),
             inputs: vec![linked_directory.join("Photo.PNG")],
             strategies: crate::strategy::Selection::default(),
             jobs: 1,
@@ -588,7 +627,7 @@ mod tests {
         );
         assert_eq!(
             batch.inputs[0].destination,
-            fs::canonicalize(output).unwrap().join("Photo.PNG")
+            Some(fs::canonicalize(output).unwrap().join("Photo.PNG"))
         );
     }
 

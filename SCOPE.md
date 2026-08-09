@@ -6,9 +6,10 @@
 
 ## Product definition
 
-ImgLean is for command-line users who want trustworthy local PNG, JPEG, WebP, and AVIF size reduction
+ImgLean is a focused offline primitive for people, scripts, CI, and coding
+agents that need trustworthy local PNG, JPEG, WebP, and AVIF size reduction
 without assembling an optimizer toolchain. For each input, it runs every enabled
-applicable strategy and writes the smallest candidate accepted under one common
+applicable strategy and selects the smallest candidate accepted under one common
 policy. The validated original participates as the first candidate, so every
 successful output is no larger than its source.
 
@@ -41,11 +42,16 @@ licensed. This document is the authoritative product boundary.
 - Keep the bundled workflow offline and permissively redistributable.
 - Require deliberate numeric quality selection before enabling a
   fidelity-reducing strategy.
+- Admit a new strategy only when its production-ready independent
+  implementation supports same-format output, fits the licensing and release
+  boundary, has a reproducible integration on qualified targets, and
+  demonstrates useful reductions or distinct wins against the existing set.
 
 ## Version 0.6
 
-Version 0.6 supports explicit static PNG, JPEG, WebP, and AVIF inputs and a required separate output
-directory on 64-bit macOS, Linux, and Windows release targets. It accepts every
+Version 0.6 supports explicit static PNG, JPEG, WebP, and AVIF inputs in either
+separate-output or write-free check mode on 64-bit macOS, Linux, and Windows
+release targets. It accepts every
 standard static PNG color-type and bit-depth combination, including Adam7,
 within documented byte, dimension, pixel, allocation, chunk, and elapsed-time
 limits. APNG, C2PA `caBX`, standard XMP text, and adjacent `.c2pa` sidecars are
@@ -122,6 +128,13 @@ invocation deadline. A later per-input failure does not roll back earlier
 outputs. Publication renames a complete validated temporary file within the
 output directory and replaces an existing regular destination when present.
 
+`--check` requires no output directory. It applies the same source validation,
+provider execution, candidate validation, and winner selection using an
+invocation-owned temporary directory, but publishes nothing. It exits `4` when
+at least one input has a smaller accepted candidate and `0` when none do;
+processing failure, invalid usage, and warning-only completion retain statuses
+`1`, `2`, and `3` respectively.
+
 ## Non-goals and future directions
 
 Version 0.6 does not provide directory traversal, standard-input pipelines,
@@ -129,7 +142,9 @@ in-place operation, format conversion, APNG processing, a general plugin ABI,
 provider downloads, remote services, transactional rollback, backup creation,
 or independent perceptual quality measurement. Additional formats, providers,
 architectures, and explicit fidelity policies require their own reviewed
-contracts.
+contracts and evidence that they materially improve the applicable candidate
+set. ImgLean does not promise the globally smallest representation across
+formats; same-format optimization is an intentional product boundary.
 
 ## Document ownership
 

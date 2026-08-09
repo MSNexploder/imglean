@@ -12,6 +12,10 @@ normal local CLI operation but does not promise that paths remain bound to the
 same directory entries when another process concurrently renames or replaces
 path components.
 
+This layer is used only by `--output`. `--check` performs the same candidate
+selection without resolving destinations, preparing final files, or invoking
+publication.
+
 ## Destination preflight
 
 The user supplies an existing output directory. Structural preflight resolves
@@ -57,6 +61,12 @@ permissions are not a confidentiality boundary. The controller tracks every
 internal pathname created by the current invocation and removes it after
 handled failure when possible. It never deletes an earlier artifact merely
 because its name resembles an ImgLean temporary name.
+
+Check mode creates one collision-resistant invocation directory under the
+platform temporary directory for private provider inputs and candidates. It
+tracks and removes its own artifacts and then that directory after handled
+completion or failure. These scratch files are not outputs and are never
+published.
 
 Outputs receive the ownership, permissions, access-control entries, timestamps,
 flags, and other metadata produced by ordinary new-file creation on the current

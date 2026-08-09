@@ -95,7 +95,10 @@ Every strategy receives a fresh private input containing the validated source
 capture and an absent private candidate path. It never receives the source path
 or requested destination. The controller verifies the private input remained
 unchanged, bounds and reads the candidate, validates it independently, and
-exclusively owns winner selection and publication.
+exclusively owns winner selection and any publication. Output mode places these
+artifacts in the output directory; check mode uses an invocation-owned platform
+temporary directory and publishes nothing. Provider behavior is otherwise
+identical in both modes.
 
 Every bundled provider runs in a short-lived private role of the current
 executable. External providers are supervised directly. Process separation isolates

@@ -31,6 +31,10 @@ buffers into the winner does not duplicate it. A registry-coupled test protects
 this effective bound. Provider address spaces remain outside this
 controller-owned byte accounting.
 
+Check mode changes only the location and lifetime of controller-owned worker
+artifacts: they live in one invocation-owned platform temporary directory and
+remain subject to the same per-worker and aggregate bounds.
+
 ## Elapsed-time limits
 
 - PNG, JPEG, WebP, or AVIF validation: 5 seconds, checked around bounded parse/decode stages.
@@ -41,7 +45,8 @@ controller-owned byte accounting.
 - OxiPNG's configured internal timeout: five seconds less than the effective
   strategy-worker deadline with a one-second floor; default 55 seconds.
 - Complete invocation: 15 minutes, checked before each input, before scheduling
-  the strategy pool, before each queued strategy begins, and before publication.
+  the strategy pool, before each queued strategy begins, and before publication
+  or a check-mode result decision.
 
 These are provider-configured or monitored deadlines, not real-time guarantees.
 A blocking system call, scheduler delay, termination, or one bounded operation

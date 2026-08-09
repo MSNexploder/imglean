@@ -35,6 +35,50 @@ fn complete_worker_race_publishes_a_smaller_valid_result() {
 }
 
 #[test]
+fn check_reports_available_reductions_without_writing() {
+    let directory = TestDirectory::new();
+    let source = directory.path.join("photo.png");
+    let source_bytes = compressible_png();
+    fs::write(&source, &source_bytes).unwrap();
+
+    let result = Command::new(env!("CARGO_BIN_EXE_imglean"))
+        .arg("--check")
+        .arg(&source)
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(4), "{}", stderr(&result));
+    assert!(stdout(&result).contains("winner; saved"));
+    assert!(!stdout(&result).contains("     output"));
+    assert!(stderr(&result).contains("1 optimization available"));
+    assert_eq!(fs::read(&source).unwrap(), source_bytes);
+    assert_eq!(fs::read_dir(&directory.path).unwrap().count(), 1);
+}
+
+#[test]
+fn check_succeeds_when_no_enabled_strategy_can_reduce_the_input() {
+    let directory = TestDirectory::new();
+    let source = directory.path.join("photo.png");
+    fs::write(&source, compressible_png()).unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_imglean"));
+    command.arg("--check");
+    for strategy in [
+        "oxipng-libdeflate-v1",
+        "oxipng-zopfli-v1",
+        "optipng-v1",
+        "pngquant-v1",
+    ] {
+        command.arg("--disable-strategy").arg(strategy);
+    }
+    let result = command.arg(&source).output().unwrap();
+
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    assert!(stdout(&result).contains("-> baseline"));
+    assert_eq!(stderr(&result), "Summary: 1 checked\n");
+    assert_eq!(fs::read_dir(&directory.path).unwrap().count(), 1);
+}
+
+#[test]
 fn bundled_jpeg_strategies_run_through_the_controller() {
     let directory = TestDirectory::new();
     let output_directory = directory.create_directory("out");

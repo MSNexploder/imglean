@@ -1,24 +1,66 @@
 # ImgLean
 
-ImgLean is a local CLI that runs every applicable PNG, JPEG, WebP, or AVIF optimization strategy and
-writes the smallest candidate that passes its bounded validation gate. The
-validated source is always the first candidate, so a successful output is never
-larger than its source. Sources are never replaced; existing regular output
-files are replaced only after the new result is complete and validated.
+ImgLean is a focused, offline CLI for reducing existing PNG, JPEG, WebP, and
+AVIF files without changing their format. It runs the applicable optimizers,
+independently checks every result, and selects the smallest accepted candidate.
+The original always participates, so a successful output is never larger.
+Fidelity-reducing strategies run only after an explicit numeric quality choice.
+
+It is intended to be one predictable command for people, scripts, CI, and
+coding agents—not an image editor or general asset pipeline.
 
 Version 0.6 is implemented in source. Target-specific 64-bit macOS, Linux, and
 Windows artifacts remain unpublished and unqualified until their native release
 gates pass.
 
-## Use
+## Quick start
 
-The output directory must already exist. Requested destinations may be absent or
-existing regular files; directories, symbolic links, special files, and input
-aliases are rejected:
+Write lossless results to an existing separate directory:
 
 ```sh
 imglean --output ./optimized photo.jpg icon.png hero.webp cover.avif
 ```
+
+Explicitly allow strategies that use their native numeric quality control:
+
+```sh
+imglean --quality 80 --output ./optimized photo.jpg hero.webp
+```
+
+Check whether committed assets could be reduced without writing files:
+
+```sh
+imglean --check assets/logo.png assets/hero.jpg
+```
+
+`--check` exits with status `4` when at least one input has a smaller accepted
+candidate. It performs the same source, provider, and candidate work as output
+mode but never publishes a result.
+
+## Guarantees and boundary
+
+- Inputs keep their format and dimensions; ImgLean does not resize, crop,
+  rotate, or convert them.
+- Sources are never replaced. Output mode writes to a separate directory and
+  replaces only a requested regular destination after the result is complete.
+- The original remains a candidate, so an output is never larger than its
+  source.
+- Lossless is the default. Lossy strategies require `--quality 1..100`.
+- Strategy order, selection, and reporting are stable for the same accepted
+  candidate set.
+- The bundled workflow is offline and never downloads providers.
+- Candidate acceptance proves the documented basic format gates, not pixel or
+  ancillary-payload equivalence and not a globally smallest representation.
+
+ImgLean removes avoidable encoding overhead within the selected format and
+fidelity policy. Another format might be smaller, but conversion is
+intentionally outside its scope.
+
+## Strategies and controls
+
+In output mode the destination directory must already exist. Requested
+destinations may be absent or existing regular files; directories, symbolic
+links, special files, and input aliases are rejected.
 
 The default ordered strategy set is:
 
@@ -119,9 +161,10 @@ MIME type. See the [PNG](docs/contracts/PNG.md),
 [JPEG](docs/contracts/JPEG.md), [WebP](docs/contracts/WEBP.md), and
 [AVIF](docs/contracts/AVIF.md) contracts for the exact boundaries.
 
-Exit statuses are `0` for clean success, `3` when all outputs succeed despite
-an optimizer warning, `1` for processing or reporting failure, and `2` for
-invalid CLI usage. Per-input results, including the winning strategy, go to
+Exit statuses are `0` for clean success, `1` for processing or reporting
+failure, `2` for invalid CLI usage, `3` when processing succeeds with optimizer
+warnings, and `4` when `--check` finds at least one smaller accepted candidate.
+Per-input results, including the winning strategy, go to
 standard output. Each block lists the registry rows for that input's format;
 `->` marks the winner, `!` marks a warning or rejected candidate, and strategies
 that were disabled, unavailable, not applicable at the selected quality, or not
@@ -148,6 +191,30 @@ the per-strategy worker deadline from 6 through 600 seconds and defaults to 60;
 each worker is capped by the remaining invocation time. Provider discovery,
 validation, and the invocation-wide deadline are unchanged.
 
+## Automation workflows
+
+Optimize explicitly selected generated assets into a staging directory before
+promoting them through the calling workflow:
+
+```sh
+mkdir -p .imglean-output
+imglean --output .imglean-output generated/logo.png generated/hero.jpg
+```
+
+Fail a verification step when tracked assets have avoidable encoding overhead:
+
+```sh
+imglean --check public/logo.png public/hero.jpg
+status=$?
+test "$status" -eq 0
+```
+
+Status `4` means an optimization is available; status `1` means processing
+failed; status `2` means the command was invalid; and status `3` means checking
+completed but at least one optimizer warned. A calling script or agent owns
+file discovery and any promotion of staged output. ImgLean intentionally does
+not traverse directories or replace sources in place.
+
 ## Build and validate
 
 ImgLean uses mise to select the Rust toolchain and release-audit tools:
@@ -168,6 +235,14 @@ CI executes every bundled strategy directly and through the controller on all
 release targets. Separate native jobs build pinned representative executable
 overrides for OptiPNG, pngquant, jpegtran, MozJPEG, Jpegli, and libwebp and require real
 reductions through capability discovery and the complete controller path.
+
+The release workflow can be dispatched manually to produce unpublished
+qualification artifacts. A matching `v<package-version>` tag publishes only
+after the complete bundled/external-provider CI suite plus the macOS, Linux,
+Windows, compliance, and linux/amd64 container gates all succeed. The container
+is a non-root distroless image intended for explicit
+file arguments and mounted input/output directories; its package name is the
+current repository under `ghcr.io`.
 
 ## Documentation
 

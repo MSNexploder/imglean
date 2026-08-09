@@ -64,7 +64,8 @@ changes provider software.
 
 ## Controller responsibilities
 
-The controller owns complete path and destination preflight, bounded source
+The controller owns complete path preflight and, in output mode, destination
+preflight, bounded source
 capture, the source baseline, stable strategy scheduling, process supervision,
 candidate validation, winner selection, publication, diagnostics, and
 invocation-wide limits. Workers receive neither source paths nor requested
@@ -86,7 +87,8 @@ equal, absent, or rejected.
 
 ## Per-input flow
 
-1. Resolve the strategy registry and preflight every input/output mapping.
+1. Resolve the strategy registry and preflight every input plus any requested
+   output mapping.
 2. Read the already-open input under portable before/after state checks.
 3. Validate the captured source and admit its bytes as the baseline.
 4. Submit enabled strategies in registry order to the bounded per-input worker
@@ -96,8 +98,10 @@ equal, absent, or rejected.
    owned private artifacts, collect every result, and independently validate
    candidates in registry order.
 6. Replace the current winner only when the candidate is strictly smaller.
-7. Write and revalidate the winner in the output directory, then publish it by
-   same-directory rename, replacing an existing regular destination.
+7. In output mode, write and revalidate the winner in the output directory,
+   then publish it by same-directory rename, replacing an existing regular
+   destination. In check mode, record whether the winner is smaller and publish
+   nothing.
 8. Report the winner and the registry rows for that input's format, then
    continue with the next input.
 
@@ -127,11 +131,13 @@ validation, discovery, and invocation-wide deadlines remain separate.
 
 ## Output and determinism
 
-The original validated basename maps into one required canonical output
-directory. The controller never writes a source or permits an output to alias an
-input. It publishes only a complete revalidated temporary file through a
-same-directory replacing rename. Outputs receive ordinary new-file filesystem
-metadata rather than metadata copied from the replaced destination.
+In output mode the original validated basename maps into one required canonical
+output directory. The controller never writes a source or permits an output to
+alias an input. It publishes only a complete revalidated temporary file through
+a same-directory replacing rename. Outputs receive ordinary new-file filesystem
+metadata rather than metadata copied from the replaced destination. Check mode
+uses an invocation-owned temporary directory for private provider artifacts and
+removes it without invoking the output publication layer.
 
 Given the same accepted candidate set, encoded sizes and fixed registry order
 fully determine the winner. Provider failures and timeouts may alter that set
