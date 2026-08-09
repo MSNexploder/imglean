@@ -184,7 +184,7 @@ def release_manifest(
         if node["id"] in identities
     }
     return {
-        "schema_version": 9,
+        "schema_version": 10,
         "package": "imglean",
         "version": tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"],
         "source_commit": run(["git", "rev-parse", "HEAD"]),
@@ -196,6 +196,17 @@ def release_manifest(
         "cargo_features": dict(sorted(features.items())),
         "cargo_lock_sha256": sha256(ROOT / "Cargo.lock"),
         "binary_sha256": sha256(binary),
+        "operation_modes": {
+            "output": "write selected candidates to a separate existing directory",
+            "check": "run selection without publication; status 4 means a reduction is available",
+        },
+        "exit_statuses": {
+            "0": "clean success",
+            "1": "processing or reporting failure",
+            "2": "invalid CLI usage",
+            "3": "successful processing with optimizer warnings and no check reduction",
+            "4": "check found at least one smaller accepted candidate",
+        },
         "bundled_providers": {
             "oxipng": versions.get("oxipng"),
             "libdeflater": versions.get("libdeflater"),
@@ -563,6 +574,16 @@ def smoke_release_binary(binary: Path) -> None:
             ROOT / "tests/corpus/png/v2/accepted/oxipng-reduction.png",
             source,
         )
+        source_bytes = source.read_bytes()
+        checked = subprocess.run(
+            [binary, "--check", source],
+            cwd=ROOT,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if checked.returncode != 4 or source.read_bytes() != source_bytes:
+            raise RuntimeError("release executable failed the publication-free check smoke test")
         subprocess.run(
             [binary, "--output", output, source],
             cwd=ROOT,

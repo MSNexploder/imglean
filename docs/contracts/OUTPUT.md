@@ -64,9 +64,11 @@ because its name resembles an ImgLean temporary name.
 
 Check mode creates one collision-resistant invocation directory under the
 platform temporary directory for private provider inputs and candidates. It
-tracks and removes its own artifacts and then that directory after handled
-completion or failure. These scratch files are not outputs and are never
-published.
+tracks its own artifacts and attempts to remove them and then that directory
+after handled completion or failure. These scratch files are not outputs and are never
+published. On Unix, the directory is atomically created with owner-only mode
+`0700`; the portable contract still does not claim cross-platform
+confidentiality from temporary-file names or permissions.
 
 Outputs receive the ownership, permissions, access-control entries, timestamps,
 flags, and other metadata produced by ordinary new-file creation on the current

@@ -423,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_check_as_a_write_free_mode() {
+    fn parses_check_as_a_publication_free_mode() {
         let Parsed::Run(arguments) =
             parse_strings(&["imglean", "--check", "assets/a.png"]).unwrap()
         else {

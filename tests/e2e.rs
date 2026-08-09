@@ -35,7 +35,7 @@ fn complete_worker_race_publishes_a_smaller_valid_result() {
 }
 
 #[test]
-fn check_reports_available_reductions_without_writing() {
+fn check_reports_available_reductions_without_publishing() {
     let directory = TestDirectory::new();
     let source = directory.path.join("photo.png");
     let source_bytes = compressible_png();

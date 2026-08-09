@@ -27,7 +27,7 @@ Explicitly allow strategies that use their native numeric quality control:
 imglean --quality 80 --output ./optimized photo.jpg hero.webp
 ```
 
-Check whether committed assets could be reduced without writing files:
+Check whether committed assets could be reduced without creating output files:
 
 ```sh
 imglean --check assets/logo.png assets/hero.jpg

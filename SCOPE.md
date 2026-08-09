@@ -50,7 +50,7 @@ licensed. This document is the authoritative product boundary.
 ## Version 0.6
 
 Version 0.6 supports explicit static PNG, JPEG, WebP, and AVIF inputs in either
-separate-output or write-free check mode on 64-bit macOS, Linux, and Windows
+separate-output or publication-free check mode on 64-bit macOS, Linux, and Windows
 release targets. It accepts every
 standard static PNG color-type and bit-depth combination, including Adam7,
 within documented byte, dimension, pixel, allocation, chunk, and elapsed-time

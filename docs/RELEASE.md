@@ -1,9 +1,9 @@
 # Version 0.6 Release Contract
 
 > [!IMPORTANT]
-> Release automation is implemented, but the x86-64 target artifacts are not
-> yet qualified or published. Qualification requires the native workflow runs
-> below and recorded minimum operating-system boundaries.
+> Release automation is implemented, but the x86-64 target artifacts and
+> linux/amd64 container remain unqualified and unpublished until their native
+> workflow gates pass.
 
 ## Targets
 
@@ -13,15 +13,16 @@ Version 0.6 release qualification begins with these target-specific artifacts:
 - `x86_64-unknown-linux-gnu`; and
 - `x86_64-pc-windows-msvc`.
 
-Before the first release candidate, native test results define and record the
-minimum macOS deployment version, minimum supported glibc version, and minimum
-supported Windows version. If a target cannot satisfy the documented workflow,
-the scope and this contract are revised before release rather than silently
-shipping an unqualified artifact.
-
 The checked-in native matrix uses `macos-15-intel`, `ubuntu-24.04`, and
-`windows-2025`. These runner images are build environments, not minimum runtime
-version claims.
+`windows-2025`. Until lower runtime boundaries are separately tested and
+recorded, the qualified claims are limited to macOS 15 on x86-64, Ubuntu 24.04
+on x86-64, and Windows Server 2025 on x86-64. A successful build on these
+runners does not imply compatibility with earlier releases.
+
+The container target is `linux/amd64`. Its final image uses the pinned
+distroless Debian 13 C/C++ runtime, runs as a non-root user, and contains no
+shell or package manager. It contains the executable, Apache-2.0 license, and
+third-party notices.
 
 ## Build inputs
 
@@ -60,16 +61,28 @@ adapters do not gate provider release numbers.
 Representative native filesystems must demonstrate complete replacing rename
 publication. Cross-compilation alone does not qualify a target.
 
+The container job builds with the exact Rust version resolved by the compliance
+job, smoke-tests the packaged CLI and publication-free check path inside the image,
+and saves the qualified container image archive for the publication gate. It
+resolves the exact builder-image digest before the build and records that digest,
+the pinned runtime image, Docker versions, and source commit with the release
+assets.
+
 The canonical source gate is `mise run check`. Release qualification also runs
 `mise run audit`, regenerates and verifies `THIRD_PARTY_NOTICES.md`, generates
 and parses an SPDX 2.3 SBOM, builds the target's release executable natively,
 and smoke-tests that exact executable through the complete worker and replacing
 publication flow before archiving it.
 
-The release-candidate workflow is manually dispatched and retains its archives
-as workflow artifacts. It does not create a tag or publish a GitHub release;
-those external publication actions require a separate explicit decision after
-the target qualifications and minimum runtime boundaries are recorded.
+Manual dispatch runs the complete qualification workflow and retains native
+archives plus the container image as workflow artifacts without publishing
+them. Pushing a tag exactly matching `v` plus the Cargo package version runs the
+same gates. The release workflow calls the complete CI workflow, including all
+bundled and representative external-provider integrations. Only after that
+workflow, every native package, compliance, and container job succeeds does the
+publication job create a draft GitHub release, publish the container to GHCR as
+the version tag and `latest`, and make the GitHub release visible. The workflow
+never creates or pushes a tag.
 
 The dependency gate checks licenses, advisories, source provenance, enabled
 features, direct and transitive Rust code, vendored code, build scripts, and
@@ -88,8 +101,9 @@ Each platform archive contains:
 - the release-input manifest; and
 - SHA-256 checksums.
 
-The manifest records stable strategy order, identifiers, quality and metadata
-policies, worker limits, bundled settings, external-override capability
+The manifest records operation modes and exit statuses, stable strategy order,
+identifiers, quality and metadata policies, worker limits, bundled settings,
+external-override capability
 contracts, invocation arguments, representative CI revisions, and exact
 bundled OxiPNG, OptiPNG, Cexcept, MozJPEG, Jpegli, Highway, libpng,
 libdeflater, Zopfli, libwebp, image-webp, libavif, libaom, ravif, and rav1e
@@ -100,6 +114,10 @@ or SBOM.
 Archives do not include an installer, separately installed optimizer, or runtime.
 Release notes state the exact platform boundary and do not imply that one binary
 runs across operating systems.
+
+The GHCR image is a separate target-specific distribution, not a portable
+replacement for the native archives. Its tag follows the Git tag, including the
+leading `v`.
 
 `tools/package_release.py` refuses a dirty source tree for normal packaging. It
 also accepts only the three declared version 0.6 targets, requires the declared

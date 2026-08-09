@@ -33,7 +33,7 @@ impl Artifacts {
                 "imglean-check-{}-{timestamp:x}-{sequence:x}",
                 std::process::id()
             ));
-            match fs::create_dir(&directory) {
+            match create_temporary_directory(&directory) {
                 Ok(()) => {
                     return Ok(Self {
                         directory,
@@ -120,6 +120,20 @@ impl Artifacts {
     }
 }
 
+fn create_temporary_directory(path: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt as _;
+
+        let mut builder = fs::DirBuilder::new();
+        builder.mode(0o700).create(path)
+    }
+    #[cfg(not(unix))]
+    {
+        fs::create_dir(path)
+    }
+}
+
 impl Drop for Artifacts {
     fn drop(&mut self) {
         for path in self.owned.drain(..) {
@@ -179,6 +193,19 @@ mod tests {
             assert!(directory.is_dir());
         }
         assert!(!directory.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn temporary_artifacts_use_an_owner_only_directory() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let artifacts = Artifacts::temporary().unwrap();
+        let mode = fs::metadata(artifacts.directory())
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700);
     }
 
     fn test_directory() -> PathBuf {

@@ -137,7 +137,7 @@ alias an input. It publishes only a complete revalidated temporary file through
 a same-directory replacing rename. Outputs receive ordinary new-file filesystem
 metadata rather than metadata copied from the replaced destination. Check mode
 uses an invocation-owned temporary directory for private provider artifacts and
-removes it without invoking the output publication layer.
+attempts to remove it without invoking the output publication layer.
 
 Given the same accepted candidate set, encoded sizes and fixed registry order
 fully determine the winner. Provider failures and timeouts may alter that set

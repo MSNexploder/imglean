@@ -1,12 +1,19 @@
-name: Release candidate artifacts
+name: Release artifacts
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: read
 
 jobs:
+  qualification:
+    name: Complete CI qualification
+    uses: ./.github/workflows/ci.yml
+
   compliance:
     name: Compliance records
     runs-on: ubuntu-24.04
@@ -19,6 +26,12 @@ jobs:
         id: toolchain
         shell: bash
         run: echo "rust_version=$(rustc -V | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - name: Verify release tag
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          version=$(mise exec -- python -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          test "$GITHUB_REF_NAME" = "v$version"
       - name: Audit dependencies
         run: mise run audit
       - name: Generate notices and SBOM
@@ -37,7 +50,9 @@ jobs:
 
   package:
     name: Package (${{ matrix.target }})
-    needs: compliance
+    needs:
+      - compliance
+      - qualification
     strategy:
       fail-fast: false
       matrix:
@@ -85,3 +100,110 @@ jobs:
         with:
           name: imglean-${{ matrix.target }}
           path: dist/*
+
+  container:
+    name: Container (linux/amd64)
+    needs:
+      - compliance
+      - qualification
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build minimal container
+        shell: bash
+        run: |
+          builder="docker.io/library/rust:${{ needs.compliance.outputs.rust_version }}-bookworm"
+          builder_digest=$(docker buildx imagetools inspect "$builder" | awk '/^Digest:/ { print $2; exit }')
+          test -n "$builder_digest"
+          runtime=$(awk '/^FROM gcr.io\/distroless\// { print $2; exit }' Dockerfile)
+          {
+            echo "rust_version=${{ needs.compliance.outputs.rust_version }}"
+            echo "builder=$builder@$builder_digest"
+            echo "runtime=$runtime"
+            echo "source_commit=$GITHUB_SHA"
+            docker version --format 'docker_client={{.Client.Version}} docker_server={{.Server.Version}}'
+          } > container-build-inputs.txt
+          docker build \
+            --build-arg RUST_IMAGE="$builder@$builder_digest" \
+            --build-arg VERSION=${GITHUB_REF_NAME:-dev} \
+            --build-arg SOURCE_COMMIT=$GITHUB_SHA \
+            --build-arg SOURCE_REPOSITORY=$GITHUB_REPOSITORY \
+            --platform linux/amd64 \
+            --tag imglean-release:$GITHUB_SHA \
+            .
+      - name: Smoke-test container
+        shell: bash
+        run: |
+          docker run --rm imglean-release:$GITHUB_SHA --version
+          set +e
+          docker run --rm \
+            --volume "$PWD/tests/corpus/png/v2/accepted:/inputs:ro" \
+            imglean-release:$GITHUB_SHA \
+            --check /inputs/oxipng-reduction.png
+          status=$?
+          set -e
+          test "$status" -eq 4
+      - name: Save qualified container
+        shell: bash
+        run: docker save imglean-release:$GITHUB_SHA | gzip --no-name > imglean-linux-amd64.docker.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: imglean-container-linux-amd64
+          path: |
+            container-build-inputs.txt
+            imglean-linux-amd64.docker.tar.gz
+
+  publish:
+    name: Publish qualified release
+    if: github.event_name == 'push'
+    needs:
+      - package
+      - container
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: imglean-x86_64-*
+          path: release-assets
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: imglean-container-linux-amd64
+          path: container
+      - name: Add container build record
+        run: cp container/container-build-inputs.txt release-assets/
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if state=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null); then
+            test "$state" = true
+            gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              release-assets/* \
+              --verify-tag \
+              --generate-notes \
+              --draft \
+              --title "ImgLean $GITHUB_REF_NAME"
+          fi
+      - name: Publish container image
+        shell: bash
+        run: |
+          gzip --decompress --stdout container/imglean-linux-amd64.docker.tar.gz | docker load
+          repository=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          image="ghcr.io/$repository"
+          printf '%s' '${{ github.token }}' | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker tag imglean-release:$GITHUB_SHA "$image:$GITHUB_REF_NAME"
+          docker tag imglean-release:$GITHUB_SHA "$image:latest"
+          docker push "$image:$GITHUB_REF_NAME"
+          docker push "$image:latest"
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false
