@@ -1,6 +1,6 @@
 [package]
 name = "imglean"
-version = "0.4.0"
+version = "0.6.0"
 edition = "2024"
 description = "Run image optimizers and select the smallest verified candidate per input"
 license = "Apache-2.0"
@@ -22,6 +22,7 @@ flate2 = { version = "=1.1.9", default-features = false, features = ["rust_backe
 oxipng = { version = "=10.1.1", default-features = false, features = ["zopfli"] }
 png = { version = "=0.18.1", default-features = false }
 same-file = "=1.0.6"
+zune-jpeg = { version = "=0.5.14", default-features = false, features = ["log", "std"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Storage_FileSystem"] }

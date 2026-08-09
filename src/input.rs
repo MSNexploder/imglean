@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::cli::Arguments;
+use crate::image::ImageFormat;
 use crate::limits::MAX_SOURCE_BYTES;
 
 #[derive(Debug)]
@@ -18,6 +19,7 @@ pub struct Batch {
 pub struct PreflightInput {
     pub canonical_source: PathBuf,
     pub destination: PathBuf,
+    pub format: ImageFormat,
     source: File,
     sidecars: [PathBuf; 2],
 }
@@ -55,7 +57,7 @@ pub fn preflight(arguments: Arguments) -> Result<Batch, PreflightError> {
     let mut inputs = Vec::with_capacity(arguments.inputs.len());
 
     for argument in arguments.inputs {
-        let basename = validate_basename(&argument)?;
+        let (basename, format) = validate_basename(&argument)?;
         let absolute_argument = absolute_from(&working_directory, &argument);
         let observed =
             fs::symlink_metadata(&absolute_argument).map_err(|_| PreflightError::Input {
@@ -117,6 +119,7 @@ pub fn preflight(arguments: Arguments) -> Result<Batch, PreflightError> {
         inputs.push(PreflightInput {
             canonical_source,
             destination,
+            format,
             source,
             sidecars,
         });
@@ -248,7 +251,7 @@ fn portable_modified(metadata: &Metadata) -> Result<Option<SystemTime>, &'static
     }
 }
 
-fn validate_basename(path: &Path) -> Result<OsString, PreflightError> {
+fn validate_basename(path: &Path) -> Result<(OsString, ImageFormat), PreflightError> {
     let Some(basename) = path.file_name() else {
         return Err(PreflightError::Input {
             path: path.to_path_buf(),
@@ -267,14 +270,20 @@ fn validate_basename(path: &Path) -> Result<OsString, PreflightError> {
             reason: "the input basename is not printable ASCII",
         });
     }
-    let bytes = text.as_bytes();
-    if bytes.len() <= 4 || !bytes[bytes.len() - 4..].eq_ignore_ascii_case(b".png") {
+    let Some(format) = ImageFormat::from_path(path) else {
         return Err(PreflightError::Input {
             path: path.to_path_buf(),
-            reason: "the input basename needs a nonempty stem and .png extension",
+            reason: "the input basename needs a nonempty stem and .png, .jpg, or .jpeg extension",
+        });
+    };
+    let extension_length = path.extension().map_or(0, |extension| extension.len());
+    if text.len() <= extension_length + 1 {
+        return Err(PreflightError::Input {
+            path: path.to_path_buf(),
+            reason: "the input basename needs a nonempty stem and .png, .jpg, or .jpeg extension",
         });
     }
-    Ok(basename.to_os_string())
+    Ok((basename.to_os_string(), format))
 }
 
 fn validate_destination(destination: &Path) -> Result<(), PreflightError> {
@@ -421,9 +430,17 @@ mod tests {
             Err(PreflightError::Input { .. })
         ));
         assert!(matches!(
-            validate_basename(Path::new("photo.jpg")),
+            validate_basename(Path::new(".jpg")),
             Err(PreflightError::Input { .. })
         ));
+        assert!(matches!(
+            validate_basename(Path::new("photo.gif")),
+            Err(PreflightError::Input { .. })
+        ));
+        assert_eq!(
+            validate_basename(Path::new("photo.JPEG")).unwrap().1,
+            ImageFormat::Jpeg
+        );
     }
 
     #[test]

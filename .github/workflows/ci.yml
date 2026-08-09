@@ -161,6 +161,179 @@ jobs:
           --binary ${{ matrix.binary }}
           --provider "${{ steps.pngquant.outputs.path }}"
 
+  jpeg-providers:
+    name: ${{ matrix.provider }} adapter (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            binary: target/x86_64-unknown-linux-gnu/release/imglean
+            provider: mozjpeg
+            repository: mozilla/mozjpeg
+            revision_file: ci/mozjpeg-revision.txt
+            build_targets: cjpeg jpegtran
+            provider_path: build/cjpeg
+            jpegtran_path: build/jpegtran
+            cmake_options: -DWITH_SIMD=OFF
+            kind: unix
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            binary: target/x86_64-apple-darwin/release/imglean
+            provider: mozjpeg
+            repository: mozilla/mozjpeg
+            revision_file: ci/mozjpeg-revision.txt
+            build_targets: cjpeg jpegtran
+            provider_path: build/cjpeg
+            jpegtran_path: build/jpegtran
+            cmake_options: -DWITH_SIMD=OFF
+            kind: unix
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            binary: target/x86_64-pc-windows-msvc/release/imglean.exe
+            provider: mozjpeg
+            repository: mozilla/mozjpeg
+            revision_file: ci/mozjpeg-revision.txt
+            build_targets: cjpeg jpegtran
+            provider_path: build/Release/cjpeg.exe
+            jpegtran_path: build/Release/jpegtran.exe
+            cmake_options: -DWITH_SIMD=OFF
+            kind: windows
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            binary: target/x86_64-unknown-linux-gnu/release/imglean
+            provider: jpegli
+            repository: google/jpegli
+            revision_file: ci/jpegli-revision.txt
+            build_targets: cjpegli
+            provider_path: build/tools/cjpegli
+            jpegtran_path: ""
+            cmake_options: -DJPEGLI_BUNDLE_LIBPNG=ON -DJPEGLI_ENABLE_BENCHMARK=OFF -DJPEGLI_ENABLE_DOXYGEN=OFF -DJPEGLI_ENABLE_JNI=OFF -DJPEGLI_ENABLE_MANPAGES=OFF -DJPEGLI_ENABLE_OPENEXR=OFF -DJPEGLI_ENABLE_SJPEG=OFF
+            kind: unix
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            binary: target/x86_64-apple-darwin/release/imglean
+            provider: jpegli
+            repository: google/jpegli
+            revision_file: ci/jpegli-revision.txt
+            build_targets: cjpegli
+            provider_path: build/tools/cjpegli
+            jpegtran_path: ""
+            cmake_options: -DJPEGLI_BUNDLE_LIBPNG=ON -DJPEGLI_ENABLE_BENCHMARK=OFF -DJPEGLI_ENABLE_DOXYGEN=OFF -DJPEGLI_ENABLE_JNI=OFF -DJPEGLI_ENABLE_MANPAGES=OFF -DJPEGLI_ENABLE_OPENEXR=OFF -DJPEGLI_ENABLE_SJPEG=OFF
+            kind: unix
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            binary: target/x86_64-pc-windows-msvc/release/imglean.exe
+            provider: jpegli
+            repository: google/jpegli
+            revision_file: ci/jpegli-revision.txt
+            build_targets: cjpegli
+            provider_path: build/tools/Release/cjpegli.exe
+            jpegtran_path: ""
+            cmake_options: -DJPEGLI_BUNDLE_LIBPNG=ON -DJPEGLI_ENABLE_BENCHMARK=OFF -DJPEGLI_ENABLE_DOXYGEN=OFF -DJPEGLI_ENABLE_JNI=OFF -DJPEGLI_ENABLE_MANPAGES=OFF -DJPEGLI_ENABLE_OPENEXR=OFF -DJPEGLI_ENABLE_SJPEG=OFF
+            kind: windows
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            binary: target/x86_64-unknown-linux-gnu/release/imglean
+            provider: jpegtran
+            repository: libjpeg-turbo/libjpeg-turbo
+            revision_file: ci/libjpeg-turbo-revision.txt
+            build_targets: jpegtran
+            provider_path: build/jpegtran
+            jpegtran_path: build/jpegtran
+            cmake_options: -DWITH_SIMD=OFF
+            kind: unix
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            binary: target/x86_64-apple-darwin/release/imglean
+            provider: jpegtran
+            repository: libjpeg-turbo/libjpeg-turbo
+            revision_file: ci/libjpeg-turbo-revision.txt
+            build_targets: jpegtran
+            provider_path: build/jpegtran
+            jpegtran_path: build/jpegtran
+            cmake_options: -DWITH_SIMD=OFF
+            kind: unix
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            binary: target/x86_64-pc-windows-msvc/release/imglean.exe
+            provider: jpegtran
+            repository: libjpeg-turbo/libjpeg-turbo
+            revision_file: ci/libjpeg-turbo-revision.txt
+            build_targets: jpegtran
+            provider_path: build/Release/jpegtran.exe
+            jpegtran_path: build/Release/jpegtran.exe
+            cmake_options: -DWITH_SIMD=OFF
+            kind: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
+        with:
+          install: false
+      - name: Install build tools
+        run: mise install rust python
+      - name: Build ImgLean
+        run: cargo build --locked --release --target ${{ matrix.target }}
+      - name: Build representative provider revision
+        id: provider_unix
+        if: matrix.kind == 'unix'
+        shell: bash
+        run: |
+          revision=$(tr -d '\r\n' < "${{ matrix.revision_file }}")
+          source="$RUNNER_TEMP/${{ matrix.provider }}"
+          git clone --filter=blob:none --no-checkout "https://github.com/${{ matrix.repository }}.git" "$source"
+          git -C "$source" checkout "$revision"
+          if test "${{ matrix.provider }}" = jpegli; then
+            git -C "$source" submodule update --init --recursive --depth 1
+          fi
+          cmake -S "$source" -B "$source/build" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF ${{ matrix.cmake_options }}
+          cmake --build "$source/build" --config Release --target ${{ matrix.build_targets }} --parallel 2
+          provider="$source/${{ matrix.provider_path }}"
+          test -x "$provider"
+          echo "path=$provider" >> "$GITHUB_OUTPUT"
+          if test -n "${{ matrix.jpegtran_path }}"; then
+            jpegtran="$source/${{ matrix.jpegtran_path }}"
+            test -x "$jpegtran"
+            echo "jpegtran_path=$jpegtran" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build representative provider revision
+        id: provider_windows
+        if: matrix.kind == 'windows'
+        shell: pwsh
+        run: |
+          $revision = (Get-Content "${{ matrix.revision_file }}" -Raw).Trim()
+          $source = Join-Path $env:RUNNER_TEMP "${{ matrix.provider }}"
+          git clone --filter=blob:none --no-checkout "https://github.com/${{ matrix.repository }}.git" $source
+          git -C $source checkout $revision
+          if ("${{ matrix.provider }}" -eq "jpegli") {
+            git -C $source submodule update --init --recursive --depth 1
+          }
+          cmake -S $source -B "$source/build" -DBUILD_TESTING=OFF ${{ matrix.cmake_options }}
+          cmake --build "$source/build" --config Release --target ${{ matrix.build_targets }} --parallel 2
+          $provider = Join-Path $source "${{ matrix.provider_path }}"
+          if (-not (Test-Path $provider -PathType Leaf)) { throw "provider executable not found" }
+          "path=$provider" >> $env:GITHUB_OUTPUT
+          if ("${{ matrix.jpegtran_path }}" -ne "") {
+            $jpegtran = Join-Path $source "${{ matrix.jpegtran_path }}"
+            if (-not (Test-Path $jpegtran -PathType Leaf)) { throw "jpegtran executable not found" }
+            "jpegtran_path=$jpegtran" >> $env:GITHUB_OUTPUT
+          }
+      - name: Exercise discovery and real provider execution
+        if: matrix.provider != 'jpegtran'
+        run: >-
+          mise exec -- python tools/test_jpeg_provider.py
+          --binary ${{ matrix.binary }}
+          --name ${{ matrix.provider }}
+          --provider "${{ steps.provider_unix.outputs.path || steps.provider_windows.outputs.path }}"
+      - name: Exercise lossless jpegtran discovery and execution
+        if: matrix.provider == 'mozjpeg' || matrix.provider == 'jpegtran'
+        run: >-
+          mise exec -- python tools/test_jpegtran_provider.py
+          --binary ${{ matrix.binary }}
+          --provider "${{ steps.provider_unix.outputs.jpegtran_path || steps.provider_windows.outputs.jpegtran_path }}"
+
   compliance:
     name: Dependency and release records
     runs-on: ubuntu-24.04
@@ -172,6 +345,15 @@ jobs:
         run: |
           mise exec -- python tools/generate_png_corpus.py
           changes=$(git status --porcelain --untracked-files=all -- tests/corpus/png/v2)
+          if test -n "$changes"; then
+            printf '%s\n' "$changes"
+            exit 1
+          fi
+      - name: Verify generated JPEG corpus
+        shell: bash
+        run: |
+          mise exec -- python tools/generate_jpeg_corpus.py
+          changes=$(git status --porcelain --untracked-files=all -- tests/corpus/jpeg/v1)
           if test -n "$changes"; then
             printf '%s\n' "$changes"
             exit 1

@@ -36,7 +36,7 @@ def main() -> int:
     parser.add_argument("--allow-dirty", action="store_true")
     args = parser.parse_args()
     if args.target not in RELEASE_TARGETS:
-        parser.error(f"unsupported version 0.4 release target: {args.target}")
+        parser.error(f"unsupported version 0.6 release target: {args.target}")
 
     required = [
         args.binary,
@@ -44,8 +44,6 @@ def main() -> int:
         args.notices,
         ROOT / "Cargo.lock",
         ROOT / "LICENSE.md",
-        ROOT / "ci/optipng-version.txt",
-        ROOT / "ci/pngquant-versions.txt",
     ]
     for path in required:
         if not path.is_file():
@@ -174,7 +172,7 @@ def release_manifest(
         if node["id"] in identities
     }
     return {
-        "schema_version": 4,
+        "schema_version": 6,
         "package": "imglean",
         "version": tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"],
         "source_commit": run(["git", "rev-parse", "HEAD"]),
@@ -192,31 +190,64 @@ def release_manifest(
             "libdeflate-sys": versions.get("libdeflate-sys"),
             "zopfli": versions.get("zopfli"),
         },
+        "representative_external_providers": [
+            {
+                "strategies": ["optipng-v1"],
+                "implementation": "OptiPNG",
+                "revision": (ROOT / "ci/optipng-version.txt").read_text().strip(),
+            },
+            *[
+                {
+                    "strategies": ["pngquant-v1"],
+                    "implementation": "pngquant",
+                    "revision": revision,
+                }
+                for revision in (ROOT / "ci/pngquant-versions.txt").read_text().splitlines()
+                if revision
+            ],
+            {
+                "strategies": ["jpegtran-v1", "mozjpeg-v1"],
+                "implementation": "MozJPEG",
+                "revision": (ROOT / "ci/mozjpeg-revision.txt").read_text().strip(),
+            },
+            {
+                "strategies": ["jpegtran-v1"],
+                "implementation": "libjpeg-turbo",
+                "revision": (ROOT / "ci/libjpeg-turbo-revision.txt").read_text().strip(),
+            },
+            {
+                "strategies": ["jpegli-v1"],
+                "implementation": "Jpegli",
+                "revision": (ROOT / "ci/jpegli-revision.txt").read_text().strip(),
+            },
+        ],
         "strategy_registry": [
             {
                 "id": "oxipng-libdeflate-v1",
                 "execution": "embedded",
+                "format": "PNG",
                 "settings": "OxiPNG 10.1.1, pinned filters, libdeflater level 11",
             },
             {
                 "id": "oxipng-zopfli-v1",
                 "execution": "embedded",
+                "format": "PNG",
                 "settings": "OxiPNG 10.1.1, pinned filters, Zopfli 15 iterations",
             },
             {
                 "id": "optipng-v1",
                 "execution": "external-optional",
                 "provider": "optipng",
-                "supported_version": (ROOT / "ci/optipng-version.txt").read_text(encoding="ascii").strip(),
+                "format": "PNG",
+                "discovery": "CLI capability probe; provider version is not gated",
                 "arguments": ["-quiet", "-o2", "-out", "CANDIDATE", "--", "INPUT"],
             },
             {
                 "id": "pngquant-v1",
                 "execution": "external-optional",
                 "provider": "pngquant",
-                "supported_versions": (ROOT / "ci/pngquant-versions.txt")
-                .read_text(encoding="ascii")
-                .splitlines(),
+                "format": "PNG",
+                "discovery": "CLI capability probe; provider version is not gated",
                 "applicability": "numeric quality only",
                 "arguments": [
                     "--force",
@@ -231,19 +262,78 @@ def release_manifest(
                     "INPUT",
                 ],
             },
+            {
+                "id": "jpegtran-v1",
+                "execution": "external-optional",
+                "provider": "jpegtran",
+                "format": "JPEG",
+                "discovery": "CLI capability probe; provider version is not gated",
+                "applicability": "lossless and numeric quality",
+                "arguments": [
+                    "-copy",
+                    "all",
+                    "-optimize",
+                    "-progressive",
+                    "-strict",
+                    "-outfile",
+                    "CANDIDATE",
+                    "INPUT",
+                ],
+            },
+            {
+                "id": "mozjpeg-v1",
+                "execution": "external-optional",
+                "provider": "mozjpeg",
+                "format": "JPEG",
+                "discovery": "CLI capability probe; provider version is not gated",
+                "applicability": "numeric quality only",
+                "arguments": [
+                    "-quality",
+                    "QUALITY",
+                    "-progressive",
+                    "-optimize",
+                    "-strict",
+                    "-outfile",
+                    "CANDIDATE",
+                    "INPUT",
+                ],
+            },
+            {
+                "id": "jpegli-v1",
+                "execution": "external-optional",
+                "provider": "jpegli",
+                "format": "JPEG",
+                "discovery": "CLI capability probe; provider version is not gated",
+                "applicability": "numeric quality only",
+                "arguments": [
+                    "--quality",
+                    "QUALITY",
+                    "--progressive_level",
+                    "2",
+                    "INPUT",
+                    "CANDIDATE",
+                ],
+            },
         ],
         "quality_policy": {
             "accepted": "lossless or an integer from 1 through 100",
             "default": "lossless",
             "numeric_mapping": "provider-native and strategy-versioned",
-            "candidate_trust": "basic PNG gate plus audited provider settings",
+            "candidate_trust": "format-specific basic candidate gate plus pinned adapter settings",
         },
         "strategy_workers": {
             "default_cap": 2,
             "maximum": 3,
             "selection": "minimum of available parallelism and default cap",
+            "timeout_seconds": {
+                "default": 60,
+                "minimum": 6,
+                "maximum": 600,
+                "oxipng_internal_reserve": 5,
+                "oxipng_internal_minimum": 1,
+            },
         },
-        "limits_version": "v4",
+        "limits_version": "v7",
         "build_environment": {
             "platform": platform.platform(),
             "packager": f"Python {platform.python_version()}",

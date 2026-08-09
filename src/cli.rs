@@ -1,18 +1,23 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
+use std::time::Duration;
 
-use crate::limits::{DEFAULT_STRATEGY_WORKERS, MAX_INPUTS, MAX_STRATEGY_WORKERS};
+use crate::limits::{
+    DEFAULT_STRATEGY_TIMEOUT, DEFAULT_STRATEGY_WORKERS, MAX_INPUTS, MAX_STRATEGY_TIMEOUT_SECONDS,
+    MAX_STRATEGY_WORKERS, MIN_STRATEGY_TIMEOUT_SECONDS,
+};
 use crate::strategy::{ProviderId, ProviderPath, Quality, Selection, StrategyId};
 
 const HELP: &str = concat!(
     "ImgLean ",
     env!("CARGO_PKG_VERSION"),
     "\n\
-Make supported PNG images lean without replacing source files.\n\n\
+Make supported PNG and JPEG images lean without replacing source files.\n\n\
 Usage: imglean --output OUTPUT_DIRECTORY INPUT...\n\n\
 Options:\n\
   --output DIRECTORY       Existing directory for separate output files\n\
   --jobs N                 Run up to N strategy workers (1-3; default: auto)\n\
+  --timeout SECONDS        Per-strategy timeout (6-600; default: 60)\n\
   --quality VALUE          lossless or 1-100 (default: lossless)\n\
   --disable-strategy ID    Disable a strategy; may be repeated\n\
   --require-strategy ID    Require an available strategy; may be repeated\n\
@@ -21,9 +26,10 @@ Options:\n\
   --version                Print version\n\
 \n\
 Strategy IDs (default order):\n\
-  oxipng-libdeflate-v1, oxipng-zopfli-v1, optipng-v1, pngquant-v1\n\
+  oxipng-libdeflate-v1, oxipng-zopfli-v1, optipng-v1, pngquant-v1,\n\
+  jpegtran-v1, mozjpeg-v1, jpegli-v1\n\
 Supported external providers:\n\
-  optipng 7.9.1; pngquant 3.0.2 and 3.0.3\n"
+  optipng, pngquant, jpegtran, mozjpeg, jpegli (checked by CLI capability)\n"
 );
 
 const VERSION: &str = concat!("imglean ", env!("CARGO_PKG_VERSION"), "\n");
@@ -63,6 +69,7 @@ where
     let mut inputs = Vec::new();
     let mut strategies = Selection::default();
     let mut jobs = None;
+    let mut strategy_timeout = None;
     let mut quality = None;
     let mut options = true;
 
@@ -77,6 +84,7 @@ where
                 || !inputs.is_empty()
                 || strategies != Selection::default()
                 || jobs.is_some()
+                || strategy_timeout.is_some()
                 || quality.is_some()
                 || arguments.next().is_some()
             {
@@ -90,6 +98,7 @@ where
                 || !inputs.is_empty()
                 || strategies != Selection::default()
                 || jobs.is_some()
+                || strategy_timeout.is_some()
                 || quality.is_some()
                 || arguments.next().is_some()
             {
@@ -117,6 +126,14 @@ where
                 return usage("--jobs may be specified only once");
             }
             jobs = Some(parse_jobs(arguments.next())?);
+            continue;
+        }
+
+        if options && argument == OsStr::new("--timeout") {
+            if strategy_timeout.is_some() {
+                return usage("--timeout may be specified only once");
+            }
+            strategy_timeout = Some(parse_timeout(arguments.next())?);
             continue;
         }
 
@@ -196,6 +213,7 @@ where
         return usage("a strategy cannot be both disabled and required");
     }
     strategies.quality = quality.unwrap_or_default();
+    strategies.timeout = strategy_timeout.unwrap_or(DEFAULT_STRATEGY_TIMEOUT);
 
     Ok(Parsed::Run(Arguments {
         output_directory,
@@ -203,6 +221,22 @@ where
         strategies,
         jobs: jobs.unwrap_or_else(default_jobs),
     }))
+}
+
+fn parse_timeout(argument: Option<OsString>) -> Result<Duration, UsageError> {
+    let Some(argument) = argument else {
+        return usage("--timeout requires a number of seconds from 6 to 600");
+    };
+    let Some(value) = argument.to_str() else {
+        return usage("--timeout requires an ASCII integer");
+    };
+    let seconds = value.parse::<u64>().map_err(|_| UsageError {
+        message: "--timeout requires a number of seconds from 6 to 600".to_owned(),
+    })?;
+    if !(MIN_STRATEGY_TIMEOUT_SECONDS..=MAX_STRATEGY_TIMEOUT_SECONDS).contains(&seconds) {
+        return usage("--timeout requires a number of seconds from 6 to 600");
+    }
+    Ok(Duration::from_secs(seconds))
 }
 
 fn parse_quality(argument: Option<OsString>) -> Result<Quality, UsageError> {
@@ -391,6 +425,40 @@ mod tests {
             panic!("expected runnable arguments");
         };
         assert_eq!(arguments.jobs, 3);
+    }
+
+    #[test]
+    fn parses_and_bounds_strategy_timeout() {
+        let Parsed::Run(arguments) =
+            parse_strings(&["imglean", "--timeout", "180", "--output", "out", "a.png"]).unwrap()
+        else {
+            panic!("expected runnable arguments");
+        };
+        assert_eq!(arguments.strategies.timeout, Duration::from_secs(180));
+
+        for value in ["0", "5", "601", "forever"] {
+            assert_eq!(
+                parse_strings(&["imglean", "--timeout", value, "--output", "out", "a.png",])
+                    .unwrap_err()
+                    .message(),
+                "--timeout requires a number of seconds from 6 to 600"
+            );
+        }
+        assert_eq!(
+            parse_strings(&[
+                "imglean",
+                "--timeout",
+                "60",
+                "--timeout",
+                "90",
+                "--output",
+                "out",
+                "a.png",
+            ])
+            .unwrap_err()
+            .message(),
+            "--timeout may be specified only once"
+        );
     }
 
     #[test]

@@ -33,11 +33,6 @@ def main() -> int:
     args = parser.parse_args()
     binary = args.binary.resolve()
     provider = args.provider.resolve()
-    version_result = subprocess.run(
-        [provider, "--version"], check=True, capture_output=True, text=True
-    )
-    version = version_result.stdout.strip() or version_result.stderr.strip()
-
     with tempfile.TemporaryDirectory(prefix="imglean-pngquant-ci-") as temporary:
         root = Path(temporary)
         provider_directory = root / "bin"
@@ -81,7 +76,7 @@ def main() -> int:
             raise SystemExit("pngquant integration changed the source or created extra output")
         stdout = result.stdout.decode(errors="replace")
         stderr = result.stderr.decode(errors="replace")
-        if "-> pngquant-v1" not in stdout or f"provider version {version}" not in stderr:
+        if "-> pngquant-v1" not in stdout or "using pngquant-v1 provider at" not in stderr:
             raise SystemExit("pngquant discovery or winner diagnostics are missing")
 
         lossless_source = root / "lossless.png"

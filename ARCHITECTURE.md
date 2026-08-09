@@ -1,7 +1,7 @@
 # ImgLean Architecture
 
 > [!IMPORTANT]
-> This document describes the implemented version 0.4 component boundaries.
+> This document describes the implemented version 0.6 component boundaries.
 
 ## System shape
 
@@ -19,22 +19,35 @@ Process separation isolates crashes and enables bounded diagnostics and elapsed
 time supervision. It is not a security sandbox or portable hard memory limit;
 providers run with the user's authority.
 
+Integration form is assessed in the order embedded, linked, then callable.
+OxiPNG has a maintained safe Rust embedding and is embedded. jpegtran,
+MozJPEG, and Jpegli expose native linkable APIs, but linking them would add
+unsafe FFI, native build chains, and in-process crash behavior without
+improving the current CLI contract, so version 0.6 uses their maintained
+command-line front ends. OptiPNG and pngquant remain callable for the same
+worker-isolation boundary.
+
 ## Registry and discovery
 
 The versioned registry fixes strategy identity and order:
 
 1. `oxipng-libdeflate-v1` — embedded;
 2. `oxipng-zopfli-v1` — embedded;
-3. `optipng-v1` — external OptiPNG 7.9.1 when available;
-4. `pngquant-v1` — external pngquant 3.0.2 or 3.0.3 at numeric quality.
+3. `optipng-v1` — external OptiPNG for PNG when available;
+4. `pngquant-v1` — external pngquant for PNG at numeric quality;
+5. `jpegtran-v1` — external jpegtran for lossless JPEG optimization;
+6. `mozjpeg-v1` — external MozJPEG for JPEG at numeric quality;
+7. `jpegli-v1` — external Jpegli for JPEG at numeric quality.
 
 Compatible embedded strategies are enabled unless disabled. External discovery
 resolves a configured executable or the first supported executable on `PATH` on
 every platform. It probes each applicable provider once under a short deadline
-and retains its canonical path and version for the invocation. Numeric quality
-leaves all lossless strategies applicable and enables pngquant; lossless quality
-marks pngquant not applicable without probing it. Automatic absence or
-incompatibility skips a strategy; an explicitly required provider turns the same
+and retains its canonical path for the invocation. Probes check CLI identity and
+the behavior-affecting options used by the adapter; provider version text is not
+a compatibility boundary. Numeric quality leaves all lossless strategies
+applicable and enables the lossy providers; lossless quality marks them not
+applicable without probing. Automatic absence or capability mismatch skips a
+strategy; an explicitly required provider turns the same
 condition into structural preflight failure. Discovery never downloads or
 changes provider software.
 
@@ -46,12 +59,12 @@ candidate validation, winner selection, publication, diagnostics, and
 invocation-wide limits. Workers receive neither source paths nor requested
 destination paths.
 
-Source and candidate PNG bytes pass through the same bounded format validator.
-It verifies the signature, chunk framing and CRCs, complete static image decode,
-resource bounds, and the C2PA/XMP refusal. Candidate dimensions must match the
-source. The provider's audited fidelity and metadata configuration—not a second
-pixel, perceptual-quality, or ancillary comparison—establishes transformation
-semantics.
+Source and candidate bytes pass through the same bounded validator for their
+declared format. PNG and JPEG validators check their documented container
+subset, complete decode, resource bounds, and C2PA/XMP refusal. Candidate
+dimensions must match the source. The provider's audited fidelity and metadata
+configuration—not a second pixel, perceptual-quality, or ancillary
+comparison—establishes transformation semantics.
 
 ## Per-input flow
 
@@ -67,7 +80,8 @@ semantics.
 6. Replace the current winner only when the candidate is strictly smaller.
 7. Write and revalidate the winner in the output directory, then publish it by
    same-directory rename, replacing an existing regular destination.
-8. Report the winner and continue with the next input.
+8. Report the winner and the registry rows for that input's format, then
+   continue with the next input.
 
 The baseline is first, so it wins equal-size ties. Worker completion order is
 discarded before validation and selection; stable registry order remains the
@@ -89,6 +103,10 @@ diagnostics, and monitored elapsed time. It does not promise hard address-space,
 CPU, descendant-process, hostile path-race, crash-cleanup, or machine-wide
 resource containment.
 
+The CLI may override the bounded per-strategy worker deadline. Embedded OxiPNG
+receives a shorter internal deadline so the controller retains cleanup time;
+validation, discovery, and invocation-wide deadlines remain separate.
+
 ## Output and determinism
 
 The original validated basename maps into one required canonical output
@@ -107,6 +125,7 @@ binary reproducibility is not claimed.
 
 - [Input and batch](docs/contracts/INPUT_AND_BATCH.md)
 - [PNG validation](docs/contracts/PNG.md)
+- [JPEG validation](docs/contracts/JPEG.md)
 - [Provider execution](docs/contracts/PROVIDER_EXECUTION.md)
 - [Output publication](docs/contracts/OUTPUT.md)
 - [Resource limits](docs/contracts/LIMITS.md)

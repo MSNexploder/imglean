@@ -3,8 +3,8 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::artifacts::Artifacts;
+use crate::image::ValidatedImage;
 use crate::limits::MAX_SOURCE_BYTES;
-use crate::png::{ValidatedPng, validate_candidate};
 
 #[derive(Debug)]
 pub struct PreparedOutput {
@@ -18,7 +18,7 @@ pub enum OutputError {
 
 pub fn prepare(
     artifacts: &mut Artifacts,
-    source: &ValidatedPng,
+    source: &ValidatedImage,
     winner: &[u8],
 ) -> Result<PreparedOutput, OutputError> {
     if winner.len() > MAX_SOURCE_BYTES as usize {
@@ -68,7 +68,7 @@ fn write_prepared_file(file: &mut File, winner: &[u8]) -> Result<(), OutputError
 
 fn verify_prepared_file(
     path: &Path,
-    source: &ValidatedPng,
+    source: &ValidatedImage,
     winner: &[u8],
 ) -> Result<(), OutputError> {
     let completed = read_completed(path)?;
@@ -77,8 +77,8 @@ fn verify_prepared_file(
             "the completed internal output differs from the selected bytes",
         ));
     }
-    validate_candidate(source, &completed).map_err(|_| {
-        OutputError::BeforePublication("the completed internal output failed PNG validation")
+    source.validate_candidate(&completed).map_err(|_| {
+        OutputError::BeforePublication("the completed internal output failed image validation")
     })?;
     Ok(())
 }
@@ -183,7 +183,7 @@ mod tests {
     use flate2::write::ZlibEncoder;
 
     use super::*;
-    use crate::png::validate_source;
+    use crate::image::ImageFormat;
 
     static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
@@ -192,7 +192,7 @@ mod tests {
         let directory = test_directory();
         let destination = directory.join("output.png");
         let bytes = valid_png();
-        let source = validate_source(&bytes).unwrap();
+        let source = ValidatedImage::validate_source(ImageFormat::Png, &bytes).unwrap();
         let mut artifacts = Artifacts::new(directory.clone());
         let prepared = prepare(&mut artifacts, &source, &bytes).unwrap();
         assert!(!destination.exists());
@@ -208,7 +208,7 @@ mod tests {
         let directory = test_directory();
         let destination = directory.join("output.png");
         let bytes = valid_png();
-        let source = validate_source(&bytes).unwrap();
+        let source = ValidatedImage::validate_source(ImageFormat::Png, &bytes).unwrap();
         let mut artifacts = Artifacts::new(directory.clone());
         let prepared = prepare(&mut artifacts, &source, &bytes).unwrap();
         fs::write(&destination, b"existing").unwrap();
@@ -224,7 +224,7 @@ mod tests {
         let destination = directory.join("output.png");
         fs::write(&destination, b"existing").unwrap();
         let bytes = valid_png();
-        let source = validate_source(&bytes).unwrap();
+        let source = ValidatedImage::validate_source(ImageFormat::Png, &bytes).unwrap();
         let mut artifacts = Artifacts::new(directory.clone());
         let prepared = prepare(&mut artifacts, &source, &bytes).unwrap();
         assert_eq!(
@@ -245,7 +245,7 @@ mod tests {
         let control = directory.join("control");
         fs::write(&control, b"control").unwrap();
         let bytes = valid_png();
-        let source = validate_source(&bytes).unwrap();
+        let source = ValidatedImage::validate_source(ImageFormat::Png, &bytes).unwrap();
         let mut artifacts = Artifacts::new(directory.clone());
         let prepared = prepare(&mut artifacts, &source, &bytes).unwrap();
         publish(&mut artifacts, prepared, &destination).unwrap();

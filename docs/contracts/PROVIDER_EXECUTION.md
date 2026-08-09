@@ -1,122 +1,118 @@
-# Version 0.4 Provider Execution Contract
-
-> [!IMPORTANT]
-> Provider revisions, strategy identifiers, options, and limits are versioned
-> beside the code and recorded in release artifacts.
+# Version 0.6 Provider Execution Contract
 
 ## Registry and controls
 
-The stable default order is `oxipng-libdeflate-v1`,
-`oxipng-zopfli-v1`, `optipng-v1`, then `pngquant-v1`. The source baseline
-precedes all four. Every enabled applicable strategy is attempted once per
-validated input. Strictly smaller accepted output replaces the current winner;
-stable order breaks equal sizes.
+The source baseline precedes this stable order:
 
-Compatible embedded strategies are enabled by default. `--disable-strategy ID`
-removes a strategy. `--require-strategy ID` requires it to resolve during
-preflight. `--provider NAME PATH` selects a supported executable and implicitly
-requires its strategy. Duplicate, unknown, or disabled-and-required controls
-are usage errors.
+1. `oxipng-libdeflate-v1` (PNG, embedded, lossless)
+2. `oxipng-zopfli-v1` (PNG, embedded, lossless)
+3. `optipng-v1` (PNG, external, lossless)
+4. `pngquant-v1` (PNG, external, numeric quality)
+5. `jpegtran-v1` (JPEG, external, lossless)
+6. `mozjpeg-v1` (JPEG, external, numeric quality)
+7. `jpegli-v1` (JPEG, external, numeric quality)
 
-Resolution retains one entry for every stable strategy. Runnable entries are
-submitted to the worker pool; disabled, unavailable, and not-applicable entries
-are not run and do not warn. Per-input reporting always follows registry order.
-Optional discovery failure remains normal, while a required or configured
-unavailable provider fails structural preflight.
+Every per-input report retains the rows for that input's format. Strategies for
+other formats are omitted. A strategy that does not support the selected
+quality is `not applicable`; a missing compatible executable is `unavailable`.
+Runnable strategies are attempted once. A strictly smaller accepted candidate
+replaces the winner, and registry order breaks equal sizes.
 
-## Quality capability
+`--disable-strategy ID` disables a row. `--require-strategy ID` requires its
+provider to resolve. `--provider NAME PATH` selects an executable and implicitly
+requires its strategy. Duplicate, unknown, or disabled-and-required controls are
+usage errors.
 
-`--quality lossless|1..100` defaults to `lossless`. Numeric values run lossless
-strategies too; they allow fidelity reduction rather than require it. Each
-strategy declares applicability and owns its versioned native mapping:
+## Quality mapping
 
-- `oxipng-libdeflate-v1` and `oxipng-zopfli-v1` use OxiPNG's lossless
-  recompression path. Transparent-color optimization and forced 16-to-8-bit
-  conversion are disabled. OxiPNG has no general native numeric quality
-  control.
-- `optipng-v1` uses OptiPNG's lossless `-o2` optimization. Its optimization
-  levels control effort and trial count, not image quality.
-- `pngquant-v1` is not applicable to `lossless`. For numeric `Q`, it passes
-  pngquant `--quality 0-Q`: `Q` is the provider's maximum native quality target,
-  with 1 lowest and 100 highest. pngquant still limits output to a palette, so
-  100 is not a lossless promise.
+`--quality lossless|1..100` defaults to `lossless`. Numeric quality permits
+fidelity reduction but still runs applicable lossless strategies.
 
-The common number is intentionally not an ImgLean-calculated quality score.
-The controller applies its basic PNG gate and trusts the audited provider
-mapping. Baseline participation guarantees only that the selected file is not
-larger, not that a numeric-quality result is lossless.
+- Both OxiPNG strategies use pinned lossless recompression settings.
+- OptiPNG uses lossless optimization level 2.
+- pngquant receives `--quality 0-Q`; it may reduce the image to a palette even
+  at 100 and explicitly strips optional metadata.
+- jpegtran copies all extra markers, optimizes Huffman tables, and writes a
+  progressive JPEG without decoding and requantizing coefficients.
+- MozJPEG receives native `-quality Q`, progressive encoding, optimized Huffman
+  coding, and strict input handling.
+- Jpegli receives native `--quality Q` and progressive level 2.
 
-## Execution boundary
+The common number is a provider-native control, not an ImgLean-calculated
+quality score. The controller does not compare pixels or measure perceptual
+quality. Baseline participation guarantees only that a successful selected file
+is no larger than the source.
 
-Each strategy receives a fresh private input containing the controller's exact
-validated source capture and a reserved absent candidate path. Neither the
-source path nor requested destination is provided. The controller verifies that
-the private input remained unchanged, bounds and reads any candidate, validates
-it independently, and exclusively owns selection and publication.
+## Integration and execution boundary
+
+Integration form is evaluated in the order embedded, linked, then callable.
+OxiPNG is embedded through a maintained safe Rust API. jpegtran, MozJPEG, and
+Jpegli provide linkable native APIs, but linking them would introduce unsafe
+FFI, native build dependencies, and in-process crash behavior. Their maintained
+CLI front ends meet the current contract with the existing worker isolation, so
+version 0.6 uses them as callable providers. OptiPNG and pngquant use the same
+external boundary. No ImageOptim-specific discovery or execution path exists.
+
+Every strategy receives a fresh private input containing the validated source
+capture and an absent private candidate path. It never receives the source path
+or requested destination. The controller verifies the private input remained
+unchanged, bounds and reads the candidate, validates it independently, and
+exclusively owns winner selection and publication.
 
 Embedded OxiPNG runs in a short-lived private role of the current executable.
-The private protocol contains its version, strategy ID, limits version, private
-input, and candidate path. It is not a public command or plugin interface.
+External providers are supervised worker processes. Process separation isolates
+ordinary crashes and hangs; it is not a security sandbox or portable hard
+memory limit.
 
-External OptiPNG and pngquant are each the supervised worker process. They
-receive the same private paths through pinned command adapters. Process
-separation isolates ordinary provider crashes and hangs but is not a security
-sandbox.
+`--timeout SECONDS` sets each strategy worker's controller deadline from 6
+through 600 seconds and defaults to 60. Each worker receives the smaller of that
+setting and the invocation time remaining when it starts. OxiPNG's internal
+timeout is five seconds shorter than its effective controller deadline, with a
+one-second floor for workers starting near the invocation deadline. Provider
+discovery and image validation retain separate fixed limits.
 
-## External discovery
+## Capability-based discovery
 
-ImgLean supports exactly OptiPNG 7.9.1 for `optipng-v1` and pngquant 3.0.2 or
-3.0.3 for `pngquant-v1`. Preflight first uses a configured path when present;
-otherwise it searches `PATH` for `optipng`/`pngquant` (with `.exe` on Windows).
-ImgLean canonicalizes an executable regular file, invokes the provider's version
-command under the discovery deadline, and requires an exact supported version.
-Resolved paths and reported versions are retained and reported once.
+Preflight uses a configured executable when present, otherwise the first named
+executable on `PATH`: `optipng`, `pngquant`, `jpegtran`, `cjpeg` for MozJPEG,
+or `cjpegli` (with `.exe` on Windows). The path is canonicalized and probed once
+under the discovery deadline.
 
-Automatic absence, a failed probe, or incompatibility marks the optional
-strategy unavailable without running it. The same condition fails preflight
-when the user required or configured it. A strategy explicitly required at an
-inapplicable quality also fails preflight. ImgLean never searches again during
-the invocation and never downloads, installs, updates, or repairs provider
+Each probe requires bounded execution plus provider-specific CLI identity and
+the options the adapter depends on. jpegtran and MozJPEG's historical help
+paths exit with status 1 after printing valid help, which each adapter accepts
+only when every required marker is present. A release-number string is neither
+requested nor used as a compatibility gate. This is important for Jpegli,
+which does not provide a stable version command, and keeps the same rule for
+all providers. CI pins representative upstream revisions so the adapter itself
+remains reproducibly tested; those revisions do not restrict compatible
+installations.
+
+Automatic absence or capability mismatch marks an optional strategy
+`unavailable`. The same condition fails structural preflight when explicitly
+required or configured. A strategy required at an inapplicable quality also
+fails preflight. ImgLean never downloads, installs, updates, or repairs provider
 software.
 
-## Supervision and result handling
+## Supervision and results
 
-Standard input is null. Standard output and error are drained concurrently,
-bounded independently, and escaped before diagnostics. The controller polls the
-process deadline, kills and reaps an overdue process, and cleans only private
-artifacts tracked for the current invocation.
+Provider output streams are drained concurrently and bounded independently.
+The controller kills and reaps an overdue process, cleans only current-run
+private artifacts, and restores results to registry order before validation and
+selection.
 
-For one input, ImgLean runs up to the selected `--jobs` count concurrently.
-Every worker owns a separate artifact tracker. Results are collected completely
-and reordered by registry position before candidate validation, winner
-selection, and reporting. A fatal strategy result fails the input after all
-bounded work is collected; it cannot make another strategy's result disappear.
+Start failure, nonzero exit, timeout, excessive diagnostics, unreadable or
+oversized output, or candidate rejection warns and excludes that candidate.
+The baseline and other strategies continue. Successful execution without a
+candidate is a normal no-improvement result; pngquant status 99 is also a normal
+no-candidate result. Private-input mutation or cleanup failure fails the input.
 
-Start failure, nonzero or abnormal exit, timeout, excessive diagnostics,
-unreadable or oversized output, or candidate rejection produces one strategy
-warning and no candidate. Other strategies and the baseline continue. A
-successful provider that writes no candidate is a normal no-improvement result,
-as is an accepted candidate that does not improve the winner. pngquant exit
-status 99 is also a normal no-candidate result because it means its native
-quality requirement could not be met. Private-input mutation or cleanup failure
-is a per-input failure because controller-owned state can no longer be trusted.
+Native CI executes both embedded strategies directly and through the controller
+on each release target. Separate jobs build pinned representative OptiPNG,
+pngquant, MozJPEG, libjpeg-turbo jpegtran, and Jpegli sources and require a real
+reduction through discovery and the full controller path. Unit tests cover
+absence, bad identity, required failure, process failure, timeout, malformed
+output, larger output, quality mapping, and baseline fallback.
 
-Exact byte and time controls and their enforcement classification are in
-[LIMITS.md](LIMITS.md). Memory is bounded indirectly by format and artifact
-limits; no portable hard provider address-space limit is claimed.
-
-## Coverage contract
-
-Registry tests enumerate every stable strategy ID and prove one attempt per
-applicable strategy, explicit disabled, unavailable, and not-applicable states,
-bounded worker concurrency, baseline fallback, warning continuation,
-deterministic winner selection, and equal-size tie behavior. Every embedded
-strategy runs directly and through native controller tests. External tests cover
-absence, required/configured failure, incompatible versions, process failures,
-bounded diagnostics, missing and invalid candidates, larger candidates, and
-process timeouts. Native CI tests OptiPNG 7.9.1 and both supported pngquant
-versions on each release target and proves discovery plus real external-only
-reductions.
-
-This registry is an explicit product surface, not a generic executable plugin
-mechanism.
+Exact bounds are in [LIMITS.md](LIMITS.md). The registry is an explicit product
+surface, not a general executable plugin mechanism.

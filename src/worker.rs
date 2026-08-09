@@ -4,14 +4,15 @@ use std::io::{self, Read, Write};
 use std::num::NonZeroU64;
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
 use oxipng::{Deflater, FilterStrategy, Options, StripChunks, ZopfliOptions, indexset};
 
 use crate::artifacts::Artifacts;
 use crate::diagnostics::escape_worker_text;
 use crate::limits::{
-    EMBEDDED_WORKER_TIMEOUT, LIMITS_VERSION, MAX_CANDIDATE_BYTES, MAX_RECONSTRUCTED_BYTES,
-    MAX_SOURCE_BYTES, MAX_TEMPORARY_BYTES, OPTIPNG_TIMEOUT, OXIPNG_TIMEOUT, PNGQUANT_TIMEOUT,
+    LIMITS_VERSION, MAX_CANDIDATE_BYTES, MAX_RECONSTRUCTED_BYTES, MAX_SOURCE_BYTES,
+    MAX_STRATEGY_TIMEOUT_SECONDS, MAX_TEMPORARY_BYTES, MIN_OXIPNG_TIMEOUT, OXIPNG_CLEANUP_RESERVE,
 };
 use crate::png::validate_source;
 use crate::process::{self, Capture};
@@ -42,6 +43,7 @@ pub fn run_strategy(
     source: &[u8],
     strategy: &Strategy,
     quality: Quality,
+    strategy_timeout: Duration,
 ) -> StrategyResult {
     let maximum_live_bytes = (source.len() as u64)
         .checked_mul(2)
@@ -81,7 +83,13 @@ pub fn run_strategy(
         }
     };
 
-    let command = match strategy_command(strategy, quality, &private_input, &candidate_path) {
+    let command = match strategy_command(
+        strategy,
+        quality,
+        strategy_timeout,
+        &private_input,
+        &candidate_path,
+    ) {
         Ok(command) => command,
         Err(message) => {
             return cleanup_failure_or(
@@ -91,12 +99,7 @@ pub fn run_strategy(
             );
         }
     };
-    let timeout = match strategy.id {
-        StrategyId::OxipngLibdeflateV1 | StrategyId::OxipngZopfliV1 => EMBEDDED_WORKER_TIMEOUT,
-        StrategyId::OptipngV1 => OPTIPNG_TIMEOUT,
-        StrategyId::PngquantV1 => PNGQUANT_TIMEOUT,
-    };
-    let output = match process::run(command, timeout) {
+    let output = match process::run(command, strategy_timeout) {
         Ok(output) => output,
         Err(()) => {
             return cleanup_failure_or(
@@ -138,6 +141,7 @@ pub fn run_strategy(
 fn strategy_command(
     strategy: &Strategy,
     quality: Quality,
+    strategy_timeout: Duration,
     private_input: &Path,
     candidate_path: &Path,
 ) -> Result<Command, &'static str> {
@@ -150,6 +154,13 @@ fn strategy_command(
                 .arg(WORKER_ROLE)
                 .arg(strategy.id.as_str())
                 .arg(LIMITS_VERSION)
+                .arg(
+                    strategy_timeout
+                        .saturating_sub(OXIPNG_CLEANUP_RESERVE)
+                        .max(MIN_OXIPNG_TIMEOUT)
+                        .as_secs()
+                        .to_string(),
+                )
                 .arg(private_input)
                 .arg(candidate_path);
             Ok(command)
@@ -183,12 +194,55 @@ fn strategy_command(
                 .arg(private_input);
             Ok(command)
         }
+        Execution::External { executable, .. } if strategy.id == StrategyId::JpegtranV1 => {
+            let mut command = Command::new(executable);
+            command
+                .arg("-copy")
+                .arg("all")
+                .arg("-optimize")
+                .arg("-progressive")
+                .arg("-strict")
+                .arg("-outfile")
+                .arg(candidate_path)
+                .arg(private_input);
+            Ok(command)
+        }
+        Execution::External { executable, .. } if strategy.id == StrategyId::MozjpegV1 => {
+            let Some(quality) = quality.numeric() else {
+                return Err("MozJPEG requires numeric quality");
+            };
+            let mut command = Command::new(executable);
+            command
+                .arg("-quality")
+                .arg(quality.to_string())
+                .arg("-progressive")
+                .arg("-optimize")
+                .arg("-strict")
+                .arg("-outfile")
+                .arg(candidate_path)
+                .arg(private_input);
+            Ok(command)
+        }
+        Execution::External { executable, .. } if strategy.id == StrategyId::JpegliV1 => {
+            let Some(quality) = quality.numeric() else {
+                return Err("Jpegli requires numeric quality");
+            };
+            let mut command = Command::new(executable);
+            command
+                .arg("--quality")
+                .arg(quality.to_string())
+                .arg("--progressive_level")
+                .arg("2")
+                .arg(private_input)
+                .arg(candidate_path);
+            Ok(command)
+        }
         Execution::External { .. } => Err("unsupported external strategy"),
     }
 }
 
 fn run_private(arguments: &[OsString]) -> i32 {
-    if arguments.len() != 6 || arguments[3] != OsStr::new(LIMITS_VERSION) {
+    if arguments.len() != 7 || arguments[3] != OsStr::new(LIMITS_VERSION) {
         return private_error("invalid private worker protocol");
     }
     let Some(strategy) = arguments[2]
@@ -198,8 +252,19 @@ fn run_private(arguments: &[OsString]) -> i32 {
     else {
         return private_error("invalid private worker strategy");
     };
-    let input = Path::new(&arguments[4]);
-    let candidate = Path::new(&arguments[5]);
+    let Some(timeout_seconds) = arguments[4]
+        .to_str()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|seconds| {
+            (MIN_OXIPNG_TIMEOUT.as_secs()
+                ..=MAX_STRATEGY_TIMEOUT_SECONDS - OXIPNG_CLEANUP_RESERVE.as_secs())
+                .contains(seconds)
+        })
+    else {
+        return private_error("invalid private worker timeout");
+    };
+    let input = Path::new(&arguments[5]);
+    let candidate = Path::new(&arguments[6]);
     let bytes = match read_bounded(input, MAX_SOURCE_BYTES) {
         Ok(bytes) => bytes,
         Err(message) => return private_error(message),
@@ -207,7 +272,7 @@ fn run_private(arguments: &[OsString]) -> i32 {
     if validate_source(&bytes).is_err() {
         return private_error("private provider input failed PNG validation");
     }
-    let options = oxipng_options(strategy);
+    let options = oxipng_options(strategy, Duration::from_secs(timeout_seconds));
     let optimized = match oxipng::optimize_from_memory(&bytes, &options) {
         Ok(bytes) => bytes,
         Err(_) => return private_error("OxiPNG could not optimize the private input"),
@@ -233,7 +298,7 @@ fn run_private(arguments: &[OsString]) -> i32 {
     0
 }
 
-fn oxipng_options(strategy: StrategyId) -> Options {
+fn oxipng_options(strategy: StrategyId, timeout: Duration) -> Options {
     let deflater = match strategy {
         StrategyId::OxipngLibdeflateV1 => Deflater::Libdeflater { compression: 11 },
         StrategyId::OxipngZopfliV1 => Deflater::Zopfli(ZopfliOptions {
@@ -241,7 +306,11 @@ fn oxipng_options(strategy: StrategyId) -> Options {
             iterations_without_improvement: NonZeroU64::new(u64::MAX).expect("u64::MAX is nonzero"),
             maximum_block_splits: 15,
         }),
-        StrategyId::OptipngV1 | StrategyId::PngquantV1 => {
+        StrategyId::OptipngV1
+        | StrategyId::PngquantV1
+        | StrategyId::JpegtranV1
+        | StrategyId::MozjpegV1
+        | StrategyId::JpegliV1 => {
             unreachable!("external strategies do not use OxiPNG options")
         }
     };
@@ -265,7 +334,7 @@ fn oxipng_options(strategy: StrategyId) -> Options {
         strip: StripChunks::None,
         deflater,
         fast_evaluation: true,
-        timeout: Some(OXIPNG_TIMEOUT),
+        timeout: Some(timeout),
         max_decompressed_size: Some(MAX_RECONSTRUCTED_BYTES),
     }
 }
@@ -359,12 +428,14 @@ mod tests {
     use flate2::write::ZlibEncoder;
 
     use super::*;
+    use crate::limits::DEFAULT_STRATEGY_TIMEOUT;
 
     static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
     #[test]
     fn options_pin_every_policy_boundary() {
-        let options = oxipng_options(StrategyId::OxipngLibdeflateV1);
+        let timeout = DEFAULT_STRATEGY_TIMEOUT.saturating_sub(OXIPNG_CLEANUP_RESERVE);
+        let options = oxipng_options(StrategyId::OxipngLibdeflateV1, timeout);
         assert!(!options.fix_errors);
         assert!(options.force);
         assert_eq!(
@@ -386,11 +457,11 @@ mod tests {
         assert!(!options.scale_16);
         assert_eq!(options.strip, StripChunks::None);
         assert!(options.fast_evaluation);
-        assert_eq!(options.timeout, Some(OXIPNG_TIMEOUT));
+        assert_eq!(options.timeout, Some(timeout));
         assert_eq!(options.max_decompressed_size, Some(MAX_RECONSTRUCTED_BYTES));
         assert_eq!(options.deflater, Deflater::Libdeflater { compression: 11 });
 
-        let zopfli = oxipng_options(StrategyId::OxipngZopfliV1);
+        let zopfli = oxipng_options(StrategyId::OxipngZopfliV1, timeout);
         assert_eq!(
             zopfli.deflater,
             Deflater::Zopfli(ZopfliOptions {
@@ -414,6 +485,7 @@ mod tests {
                 OsString::from(WORKER_ROLE),
                 OsString::from(strategy.as_str()),
                 OsString::from(LIMITS_VERSION),
+                OsString::from("55"),
                 input.into_os_string(),
                 candidate_path.clone().into_os_string(),
             ];
@@ -426,11 +498,39 @@ mod tests {
     }
 
     #[test]
+    fn embedded_worker_receives_the_strategy_timeout_minus_cleanup_reserve() {
+        let strategy = Strategy {
+            id: StrategyId::OxipngLibdeflateV1,
+            execution: Execution::Embedded,
+        };
+        let command = strategy_command(
+            &strategy,
+            Quality::Lossless,
+            Duration::from_secs(90),
+            Path::new("private-input.png"),
+            Path::new("candidate.png"),
+        )
+        .unwrap();
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [
+                OsStr::new(WORKER_ROLE),
+                OsStr::new("oxipng-libdeflate-v1"),
+                OsStr::new(LIMITS_VERSION),
+                OsStr::new("85"),
+                OsStr::new("private-input.png"),
+                OsStr::new("candidate.png"),
+            ]
+        );
+    }
+
+    #[test]
     fn optipng_command_pins_every_adapter_argument() {
         let strategy = external_strategy(PathBuf::from("provider"));
         let command = strategy_command(
             &strategy,
             Quality::Lossless,
+            DEFAULT_STRATEGY_TIMEOUT,
             Path::new("private-input.png"),
             Path::new("candidate.png"),
         )
@@ -455,6 +555,7 @@ mod tests {
         let command = strategy_command(
             &strategy,
             Quality::Numeric(80),
+            DEFAULT_STRATEGY_TIMEOUT,
             Path::new("private-input.png"),
             Path::new("candidate.png"),
         )
@@ -477,6 +578,91 @@ mod tests {
         );
     }
 
+    #[test]
+    fn jpeg_commands_map_common_quality_and_pin_adapter_arguments() {
+        let jpegtran = Strategy {
+            id: StrategyId::JpegtranV1,
+            execution: Execution::External {
+                executable: PathBuf::from("jpegtran"),
+            },
+        };
+        let command = strategy_command(
+            &jpegtran,
+            Quality::Lossless,
+            DEFAULT_STRATEGY_TIMEOUT,
+            Path::new("private-input.jpg"),
+            Path::new("candidate.jpg"),
+        )
+        .unwrap();
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [
+                OsStr::new("-copy"),
+                OsStr::new("all"),
+                OsStr::new("-optimize"),
+                OsStr::new("-progressive"),
+                OsStr::new("-strict"),
+                OsStr::new("-outfile"),
+                OsStr::new("candidate.jpg"),
+                OsStr::new("private-input.jpg"),
+            ]
+        );
+
+        let mozjpeg = Strategy {
+            id: StrategyId::MozjpegV1,
+            execution: Execution::External {
+                executable: PathBuf::from("mozjpeg"),
+            },
+        };
+        let command = strategy_command(
+            &mozjpeg,
+            Quality::Numeric(82),
+            DEFAULT_STRATEGY_TIMEOUT,
+            Path::new("private-input.jpg"),
+            Path::new("candidate.jpg"),
+        )
+        .unwrap();
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [
+                OsStr::new("-quality"),
+                OsStr::new("82"),
+                OsStr::new("-progressive"),
+                OsStr::new("-optimize"),
+                OsStr::new("-strict"),
+                OsStr::new("-outfile"),
+                OsStr::new("candidate.jpg"),
+                OsStr::new("private-input.jpg"),
+            ]
+        );
+
+        let jpegli = Strategy {
+            id: StrategyId::JpegliV1,
+            execution: Execution::External {
+                executable: PathBuf::from("jpegli"),
+            },
+        };
+        let command = strategy_command(
+            &jpegli,
+            Quality::Numeric(82),
+            DEFAULT_STRATEGY_TIMEOUT,
+            Path::new("private-input.jpg"),
+            Path::new("candidate.jpg"),
+        )
+        .unwrap();
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [
+                OsStr::new("--quality"),
+                OsStr::new("82"),
+                OsStr::new("--progressive_level"),
+                OsStr::new("2"),
+                OsStr::new("private-input.jpg"),
+                OsStr::new("candidate.jpg"),
+            ]
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn external_strategy_uses_private_paths_and_captures_failures() {
@@ -494,6 +680,7 @@ mod tests {
                 &source,
                 &external_strategy(success),
                 Quality::Lossless,
+                DEFAULT_STRATEGY_TIMEOUT,
             ),
             StrategyResult::Candidate(source.clone())
         );
@@ -508,11 +695,25 @@ mod tests {
             &source,
             &external_strategy(failure),
             Quality::Lossless,
+            DEFAULT_STRATEGY_TIMEOUT,
         );
         assert!(matches!(
             result,
             StrategyResult::Warning(message) if message.contains("provider failed")
         ));
+
+        let timeout = directory.join("timeout-optipng");
+        write_executable(&timeout, "#!/bin/sh\nwhile :; do :; done\n");
+        assert_eq!(
+            run_strategy(
+                &mut artifacts,
+                &source,
+                &external_strategy(timeout),
+                Quality::Lossless,
+                Duration::from_millis(20),
+            ),
+            StrategyResult::Warning("worker timeout exceeded".to_owned())
+        );
 
         let mutation = directory.join("mutating-optipng");
         write_executable(
@@ -525,10 +726,11 @@ mod tests {
                 &source,
                 &external_strategy(mutation),
                 Quality::Lossless,
+                DEFAULT_STRATEGY_TIMEOUT,
             ),
             StrategyResult::Failure("the private provider input changed during execution")
         );
-        assert_eq!(fs::read_dir(&directory).unwrap().count(), 3);
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 4);
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -545,6 +747,7 @@ mod tests {
                 &compressible_png(),
                 &pngquant_strategy(executable),
                 Quality::Numeric(100),
+                DEFAULT_STRATEGY_TIMEOUT,
             ),
             StrategyResult::NoCandidate
         );
@@ -630,20 +833,14 @@ mod tests {
     fn external_strategy(executable: PathBuf) -> Strategy {
         Strategy {
             id: StrategyId::OptipngV1,
-            execution: Execution::External {
-                executable,
-                version: "7.9.1".to_owned(),
-            },
+            execution: Execution::External { executable },
         }
     }
 
     fn pngquant_strategy(executable: PathBuf) -> Strategy {
         Strategy {
             id: StrategyId::PngquantV1,
-            execution: Execution::External {
-                executable,
-                version: "3.0.2".to_owned(),
-            },
+            execution: Execution::External { executable },
         }
     }
 }

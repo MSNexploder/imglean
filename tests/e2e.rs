@@ -35,6 +35,59 @@ fn complete_worker_race_publishes_a_smaller_valid_result() {
 }
 
 #[test]
+fn jpeg_baseline_uses_format_specific_registry_and_replaces_output() {
+    let directory = TestDirectory::new();
+    let output_directory = directory.create_directory("out");
+    let source = directory.path.join("photo.JPEG");
+    let source_bytes = include_bytes!("corpus/jpeg/v1/accepted/baseline.jpg");
+    fs::write(&source, source_bytes).unwrap();
+    fs::write(output_directory.join("photo.JPEG"), b"existing").unwrap();
+
+    let result = Command::new(env!("CARGO_BIN_EXE_imglean"))
+        .arg("--disable-strategy")
+        .arg("jpegtran-v1")
+        .arg("--output")
+        .arg(&output_directory)
+        .arg(&source)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    assert_eq!(
+        fs::read(output_directory.join("photo.JPEG")).unwrap(),
+        source_bytes
+    );
+    assert_eq!(fs::read(&source).unwrap(), source_bytes);
+    let report = stdout(&result);
+    assert!(report.contains("-> baseline"));
+    for strategy in ["jpegtran-v1", "mozjpeg-v1", "jpegli-v1"] {
+        assert!(report.contains(strategy), "missing registry row {strategy}");
+    }
+    for strategy in [
+        "oxipng-libdeflate-v1",
+        "oxipng-zopfli-v1",
+        "optipng-v1",
+        "pngquant-v1",
+    ] {
+        assert!(
+            !report.contains(strategy),
+            "unexpected registry row {strategy}"
+        );
+    }
+    for strategy in ["mozjpeg-v1", "jpegli-v1"] {
+        assert!(
+            report
+                .lines()
+                .any(|line| line.contains(strategy) && line.contains("not applicable"))
+        );
+    }
+    assert!(
+        report
+            .lines()
+            .any(|line| line.contains("jpegtran-v1") && line.contains("disabled"))
+    );
+}
+
+#[test]
 fn invalid_source_does_not_prevent_a_later_valid_input() {
     let directory = TestDirectory::new();
     let output_directory = directory.create_directory("out");

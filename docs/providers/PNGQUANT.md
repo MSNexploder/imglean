@@ -1,9 +1,11 @@
 # External pngquant Strategy
 
-`pngquant-v1` supports separately installed pngquant 3.0.2 and 3.0.3. It is not
+`pngquant-v1` supports a separately installed capability-compatible pngquant. It is not
 bundled, downloaded, installed, updated, or included in ImgLean's SBOM. The
 strategy participates only when the user selects numeric quality. Discovery
 uses `PATH` or an explicit `--provider pngquant PATH` on every platform.
+Discovery verifies the required CLI identity and options; version text is not a
+compatibility gate.
 
 For `--quality Q`, the adapter invokes:
 
@@ -25,4 +27,5 @@ as a normal no-candidate result.
 pngquant is GPL-licensed with a separately available commercial license.
 Because the user supplies it as a separate executable, it does not change the
 license or dependency inventory of the Apache-2.0 ImgLean binary. Native CI
-builds and exercises both supported versions on every supported release target.
+builds and exercises pinned representative revisions on every supported release
+target.

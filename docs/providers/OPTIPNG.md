@@ -1,9 +1,10 @@
 # External OptiPNG Strategy
 
-`optipng-v1` supports exactly the separately installed OptiPNG 7.9.1 executable.
+`optipng-v1` supports a separately installed capability-compatible OptiPNG executable.
 It is not bundled, downloaded, installed, updated, or included in ImgLean's SBOM.
-Its resolved canonical path and reported version are recorded for each
-invocation in which it is enabled.
+Its resolved canonical path is recorded for each invocation in which it is
+enabled. Discovery verifies the required CLI identity and options; version text
+is not a compatibility gate.
 
 The adapter invokes:
 
@@ -19,5 +20,6 @@ its bounded candidate gate afterward.
 
 OptiPNG is zlib-licensed. Because the user supplies it as a separate executable,
 its distribution and dependency obligations remain outside the ImgLean binary.
-Native CI nevertheless downloads checksum-pinned official 7.9.1 artifacts or
-source and tests the complete adapter on every supported release target.
+Native CI nevertheless downloads a checksum-pinned representative official
+artifact or source revision and tests the complete adapter on every supported
+release target.

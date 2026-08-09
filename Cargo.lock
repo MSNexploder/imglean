@@ -108,7 +108,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "imglean"
-version = "0.4.0"
+version = "0.6.0"
 dependencies = [
  "crc32fast",
  "flate2",
@@ -116,6 +116,7 @@ dependencies = [
  "png",
  "same-file",
  "windows-sys",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -281,4 +282,22 @@ dependencies = [
  "crc32fast",
  "log",
  "simd-adler32",
+]
+
+[[package]]
+name = "zune-core"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98651bd6fa7814a351eb5e988ee9feadfc6aeb5fdbebfa4ad63ed5000c0bd97d"
+dependencies = [
+ "log",
+]
+
+[[package]]
+name = "zune-jpeg"
+version = "0.5.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b7a1c0af6e5d8d1363f4994b7a091ccf963d8b694f7da5b0b9cceb82da2c0a6"
+dependencies = [
+ "zune-core",
 ]

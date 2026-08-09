@@ -1,14 +1,12 @@
-use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
-use crate::limits::PROVIDER_DISCOVERY_TIMEOUT;
+use crate::image::ImageFormat;
+use crate::limits::{DEFAULT_STRATEGY_TIMEOUT, PROVIDER_DISCOVERY_TIMEOUT};
 use crate::process;
-
-const SUPPORTED_OPTIPNG_VERSION: &str = "7.9.1";
-const SUPPORTED_PNGQUANT_VERSIONS: [&str; 2] = ["3.0.2", "3.0.3"];
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum StrategyId {
@@ -16,14 +14,20 @@ pub enum StrategyId {
     OxipngZopfliV1,
     OptipngV1,
     PngquantV1,
+    JpegtranV1,
+    MozjpegV1,
+    JpegliV1,
 }
 
 impl StrategyId {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 7] = [
         Self::OxipngLibdeflateV1,
         Self::OxipngZopfliV1,
         Self::OptipngV1,
         Self::PngquantV1,
+        Self::JpegtranV1,
+        Self::MozjpegV1,
+        Self::JpegliV1,
     ];
 
     pub const EMBEDDED: [Self; 2] = [Self::OxipngLibdeflateV1, Self::OxipngZopfliV1];
@@ -34,7 +38,24 @@ impl StrategyId {
             Self::OxipngZopfliV1 => "oxipng-zopfli-v1",
             Self::OptipngV1 => "optipng-v1",
             Self::PngquantV1 => "pngquant-v1",
+            Self::JpegtranV1 => "jpegtran-v1",
+            Self::MozjpegV1 => "mozjpeg-v1",
+            Self::JpegliV1 => "jpegli-v1",
         }
+    }
+
+    pub const fn format(self) -> ImageFormat {
+        match self {
+            Self::OxipngLibdeflateV1
+            | Self::OxipngZopfliV1
+            | Self::OptipngV1
+            | Self::PngquantV1 => ImageFormat::Png,
+            Self::JpegtranV1 | Self::MozjpegV1 | Self::JpegliV1 => ImageFormat::Jpeg,
+        }
+    }
+
+    pub const fn needs_numeric_quality(self) -> bool {
+        matches!(self, Self::PngquantV1 | Self::MozjpegV1 | Self::JpegliV1)
     }
 
     pub fn parse(value: &str) -> Option<Self> {
@@ -54,14 +75,38 @@ impl fmt::Display for StrategyId {
 pub enum ProviderId {
     Optipng,
     Pngquant,
+    Jpegtran,
+    Mozjpeg,
+    Jpegli,
 }
 
 impl ProviderId {
+    pub const ALL: [Self; 5] = [
+        Self::Optipng,
+        Self::Pngquant,
+        Self::Jpegtran,
+        Self::Mozjpeg,
+        Self::Jpegli,
+    ];
+
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "optipng" => Some(Self::Optipng),
             "pngquant" => Some(Self::Pngquant),
+            "jpegtran" => Some(Self::Jpegtran),
+            "mozjpeg" => Some(Self::Mozjpeg),
+            "jpegli" => Some(Self::Jpegli),
             _ => None,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Optipng => "optipng",
+            Self::Pngquant => "pngquant",
+            Self::Jpegtran => "jpegtran",
+            Self::Mozjpeg => "mozjpeg",
+            Self::Jpegli => "jpegli",
         }
     }
 
@@ -69,6 +114,56 @@ impl ProviderId {
         match self {
             Self::Optipng => StrategyId::OptipngV1,
             Self::Pngquant => StrategyId::PngquantV1,
+            Self::Jpegtran => StrategyId::JpegtranV1,
+            Self::Mozjpeg => StrategyId::MozjpegV1,
+            Self::Jpegli => StrategyId::JpegliV1,
+        }
+    }
+
+    const fn executable_name(self) -> &'static str {
+        match self {
+            Self::Optipng => "optipng",
+            Self::Pngquant => "pngquant",
+            Self::Jpegtran => "jpegtran",
+            Self::Mozjpeg => "cjpeg",
+            Self::Jpegli => "cjpegli",
+        }
+    }
+
+    const fn probe_argument(self) -> &'static str {
+        match self {
+            Self::Optipng => "-help",
+            Self::Pngquant | Self::Jpegli => "--help",
+            Self::Jpegtran | Self::Mozjpeg => "-help",
+        }
+    }
+
+    const fn capability_markers(self) -> &'static [&'static str] {
+        match self {
+            Self::Optipng => &["optipng", "[options]"],
+            Self::Pngquant => &["pngquant", "--quality"],
+            Self::Jpegtran => &[
+                "usage:",
+                "-copy all",
+                "-optimize",
+                "-progressive",
+                "-outfile",
+                "-strict",
+            ],
+            Self::Mozjpeg => &[
+                "-quality",
+                "-progressive",
+                "-optimize",
+                "-strict",
+                "-outfile",
+                "-revert",
+            ],
+            Self::Jpegli => &[
+                "input can be",
+                "compressed jpeg output file",
+                "--quality",
+                "--progressive_level",
+            ],
         }
     }
 }
@@ -95,12 +190,25 @@ pub struct ProviderPath {
     pub path: PathBuf,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Selection {
     pub disabled: Vec<StrategyId>,
     pub required: Vec<StrategyId>,
     pub provider_paths: Vec<ProviderPath>,
     pub quality: Quality,
+    pub timeout: Duration,
+}
+
+impl Default for Selection {
+    fn default() -> Self {
+        Self {
+            disabled: Vec::new(),
+            required: Vec::new(),
+            provider_paths: Vec::new(),
+            quality: Quality::default(),
+            timeout: DEFAULT_STRATEGY_TIMEOUT,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -132,10 +240,7 @@ impl fmt::Display for Strategy {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Execution {
     Embedded,
-    External {
-        executable: PathBuf,
-        version: String,
-    },
+    External { executable: PathBuf },
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -162,55 +267,30 @@ pub fn resolve(selection: &Selection) -> Result<Vec<RegistryEntry>, DiscoveryErr
         })
         .collect::<Vec<_>>();
 
-    let optipng_id = StrategyId::OptipngV1;
-    let optipng_state = if selection.disabled.contains(&optipng_id) {
-        RegistryState::Disabled
-    } else {
-        let configured = selection
-            .provider_paths
-            .iter()
-            .find(|path| path.provider == ProviderId::Optipng)
-            .map(|path| path.path.as_path());
-        let required = selection.required.contains(&optipng_id);
-        match discover_optipng(configured) {
-            Ok(Some(execution)) => RegistryState::Runnable(execution),
-            Ok(None) if required => {
-                return discovery("required strategy optipng-v1 is unavailable");
+    for provider in ProviderId::ALL {
+        let id = provider.strategy();
+        let state = if selection.disabled.contains(&id) {
+            RegistryState::Disabled
+        } else if id.needs_numeric_quality() && selection.quality == Quality::Lossless {
+            RegistryState::NotApplicable
+        } else {
+            let configured = selection
+                .provider_paths
+                .iter()
+                .find(|path| path.provider == provider)
+                .map(|path| path.path.as_path());
+            let required = selection.required.contains(&id);
+            match discover(provider, configured) {
+                Ok(Some(execution)) => RegistryState::Runnable(execution),
+                Ok(None) if required => {
+                    return discovery(&format!("required strategy {id} is unavailable"));
+                }
+                Err(error) if required => return Err(error),
+                Ok(None) | Err(_) => RegistryState::Unavailable,
             }
-            Err(error) if required => return Err(error),
-            Ok(None) | Err(_) => RegistryState::Unavailable,
-        }
-    };
-    registry.push(RegistryEntry {
-        id: optipng_id,
-        state: optipng_state,
-    });
-
-    let pngquant_id = StrategyId::PngquantV1;
-    let pngquant_state = if selection.disabled.contains(&pngquant_id) {
-        RegistryState::Disabled
-    } else if selection.quality == Quality::Lossless {
-        RegistryState::NotApplicable
-    } else {
-        let configured = selection
-            .provider_paths
-            .iter()
-            .find(|path| path.provider == ProviderId::Pngquant)
-            .map(|path| path.path.as_path());
-        let required = selection.required.contains(&pngquant_id);
-        match discover_pngquant(configured) {
-            Ok(Some(execution)) => RegistryState::Runnable(execution),
-            Ok(None) if required => {
-                return discovery("required strategy pngquant-v1 is unavailable");
-            }
-            Err(error) if required => return Err(error),
-            Ok(None) | Err(_) => RegistryState::Unavailable,
-        }
-    };
-    registry.push(RegistryEntry {
-        id: pngquant_id,
-        state: pngquant_state,
-    });
+        };
+        registry.push(RegistryEntry { id, state });
+    }
 
     for required in &selection.required {
         if registry.iter().any(|entry| {
@@ -230,86 +310,89 @@ pub fn resolve(selection: &Selection) -> Result<Vec<RegistryEntry>, DiscoveryErr
     Ok(registry)
 }
 
-fn discover_pngquant(configured: Option<&Path>) -> Result<Option<Execution>, DiscoveryError> {
-    let path = match configured {
-        Some(path) => Some(resolve_executable(path)?),
-        None => find_on_path(pngquant_executable_name())?,
-    };
-    let Some(path) = path else {
-        return Ok(None);
-    };
-    let mut command = Command::new(&path);
-    command.arg("--version");
-    let output = process::run(command, PROVIDER_DISCOVERY_TIMEOUT)
-        .map_err(|()| error("cannot start the pngquant version probe"))?;
-    if output.timed_out {
-        return discovery("pngquant version probe timed out");
+fn discover(
+    provider: ProviderId,
+    configured: Option<&Path>,
+) -> Result<Option<Execution>, DiscoveryError> {
+    if let Some(path) = configured {
+        let path = resolve_executable(path)?;
+        probe(provider, &path)?;
+        return Ok(Some(Execution::External { executable: path }));
     }
-    if output.status.is_none_or(|status| !status.success()) {
-        return discovery("pngquant version probe failed");
-    }
-    if output.stdout.truncated || output.stderr.truncated {
-        return discovery("pngquant version output exceeded the diagnostic limit");
-    }
-    let version = parse_pngquant_version(&output.stdout.bytes)
-        .or_else(|| parse_pngquant_version(&output.stderr.bytes))
-        .ok_or_else(|| error("cannot parse the pngquant version"))?;
-    if !SUPPORTED_PNGQUANT_VERSIONS.contains(&version) {
-        return discovery(&format!(
-            "unsupported pngquant version {version}; expected 3.0.2 or 3.0.3"
-        ));
-    }
-    Ok(Some(Execution::External {
-        executable: path,
-        version: version.to_owned(),
-    }))
+    find_compatible_on_path(provider)
 }
 
-fn discover_optipng(configured: Option<&Path>) -> Result<Option<Execution>, DiscoveryError> {
-    let path = match configured {
-        Some(path) => resolve_executable(path).map(Some),
-        None => find_on_path(optipng_executable_name()),
-    }?;
-    let Some(path) = path else {
-        return Ok(None);
-    };
-    let mut command = Command::new(&path);
-    command.arg("-version");
-    let output = process::run(command, PROVIDER_DISCOVERY_TIMEOUT)
-        .map_err(|()| error("cannot start the OptiPNG version probe"))?;
+fn probe(provider: ProviderId, path: &Path) -> Result<(), DiscoveryError> {
+    let mut command = Command::new(path);
+    command.arg(provider.probe_argument());
+    let output = process::run(command, PROVIDER_DISCOVERY_TIMEOUT).map_err(|()| {
+        error(&format!(
+            "cannot start the {} capability probe",
+            provider.as_str()
+        ))
+    })?;
     if output.timed_out {
-        return discovery("OptiPNG version probe timed out");
+        return discovery(&format!("{} capability probe timed out", provider.as_str()));
     }
-    if output.status.is_none_or(|status| !status.success()) {
-        return discovery("OptiPNG version probe failed");
+    let accepted_status = output.status.is_some_and(|status| {
+        status.success()
+            || (matches!(provider, ProviderId::Jpegtran | ProviderId::Mozjpeg)
+                && status.code() == Some(1))
+    });
+    if !accepted_status {
+        return discovery(&format!("{} capability probe failed", provider.as_str()));
     }
     if output.stdout.truncated || output.stderr.truncated {
-        return discovery("OptiPNG version output exceeded the diagnostic limit");
-    }
-    let version = parse_optipng_version(&output.stdout.bytes)
-        .or_else(|| parse_optipng_version(&output.stderr.bytes))
-        .ok_or_else(|| error("cannot parse the OptiPNG version"))?;
-    if version != SUPPORTED_OPTIPNG_VERSION {
         return discovery(&format!(
-            "unsupported OptiPNG version {version}; expected {SUPPORTED_OPTIPNG_VERSION}"
+            "{} capability output exceeded the diagnostic limit",
+            provider.as_str()
         ));
     }
-    Ok(Some(Execution::External {
-        executable: path,
-        version: version.to_owned(),
-    }))
+    let mut bytes = output.stdout.bytes;
+    bytes.extend_from_slice(&output.stderr.bytes);
+    let text = String::from_utf8_lossy(&bytes).to_ascii_lowercase();
+    if !has_capabilities(provider, &text) {
+        return discovery(&format!(
+            "{} executable does not expose the required CLI capabilities",
+            provider.as_str()
+        ));
+    }
+    Ok(())
 }
 
-fn find_on_path(executable: &OsStr) -> Result<Option<PathBuf>, DiscoveryError> {
+fn has_capabilities(provider: ProviderId, text: &str) -> bool {
+    provider
+        .capability_markers()
+        .iter()
+        .all(|marker| text.contains(marker))
+        && (provider != ProviderId::Jpegli
+            || text.lines().any(|line| {
+                line.contains("input can be")
+                    && line
+                        .split(|character: char| !character.is_ascii_alphanumeric())
+                        .any(|word| word == "jpeg")
+            }))
+}
+
+fn find_compatible_on_path(provider: ProviderId) -> Result<Option<Execution>, DiscoveryError> {
     let Some(path) = std::env::var_os("PATH") else {
         return Ok(None);
     };
+    let executable = provider.executable_name();
+    let executable = if cfg!(windows) {
+        format!("{executable}.exe")
+    } else {
+        executable.to_owned()
+    };
     for directory in std::env::split_paths(&path) {
-        let candidate = directory.join(executable);
+        let candidate = directory.join(&executable);
         if candidate.is_file()
             && let Ok(resolved) = resolve_executable(&candidate)
+            && probe(provider, &resolved).is_ok()
         {
-            return Ok(Some(resolved));
+            return Ok(Some(Execution::External {
+                executable: resolved,
+            }));
         }
     }
     Ok(None)
@@ -333,42 +416,6 @@ fn resolve_executable(path: &Path) -> Result<PathBuf, DiscoveryError> {
     Ok(resolved)
 }
 
-fn optipng_executable_name() -> &'static OsStr {
-    if cfg!(windows) {
-        OsStr::new("optipng.exe")
-    } else {
-        OsStr::new("optipng")
-    }
-}
-
-fn pngquant_executable_name() -> &'static OsStr {
-    if cfg!(windows) {
-        OsStr::new("pngquant.exe")
-    } else {
-        OsStr::new("pngquant")
-    }
-}
-
-fn parse_optipng_version(bytes: &[u8]) -> Option<&str> {
-    let text = std::str::from_utf8(bytes).ok()?;
-    let marker = "OptiPNG version ";
-    let start = text.find(marker)? + marker.len();
-    text[start..].split_whitespace().next().map(|version| {
-        version.trim_end_matches(|character: char| {
-            !character.is_ascii_alphanumeric() && character != '.'
-        })
-    })
-}
-
-fn parse_pngquant_version(bytes: &[u8]) -> Option<&str> {
-    let version = std::str::from_utf8(bytes).ok()?.trim();
-    (!version.is_empty()
-        && version
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte == b'.'))
-    .then_some(version)
-}
-
 fn discovery<T>(message: &str) -> Result<T, DiscoveryError> {
     Err(error(message))
 }
@@ -388,7 +435,7 @@ mod tests {
     static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
     #[test]
-    fn strategy_ids_are_stable_and_unique() {
+    fn strategy_ids_are_stable_unique_and_format_specific() {
         assert_eq!(
             StrategyId::ALL.map(StrategyId::as_str),
             [
@@ -396,205 +443,224 @@ mod tests {
                 "oxipng-zopfli-v1",
                 "optipng-v1",
                 "pngquant-v1",
+                "jpegtran-v1",
+                "mozjpeg-v1",
+                "jpegli-v1",
             ]
         );
+        assert_eq!(StrategyId::MozjpegV1.format(), ImageFormat::Jpeg);
+        assert_eq!(StrategyId::JpegtranV1.format(), ImageFormat::Jpeg);
+        assert_eq!(StrategyId::OptipngV1.format(), ImageFormat::Png);
     }
 
     #[test]
-    fn parses_supported_optipng_version_output() {
-        assert_eq!(
-            parse_optipng_version(b"OptiPNG version 7.9.1\nCopyright"),
-            Some("7.9.1")
-        );
-        assert_eq!(parse_optipng_version(b"not optipng"), None);
-    }
-
-    #[test]
-    fn provider_version_record_matches_the_adapter() {
-        assert_eq!(
-            include_str!("../ci/optipng-version.txt").trim(),
-            SUPPORTED_OPTIPNG_VERSION
-        );
-        assert_eq!(
-            include_str!("../ci/pngquant-versions.txt")
-                .lines()
-                .collect::<Vec<_>>(),
-            SUPPORTED_PNGQUANT_VERSIONS
-        );
-    }
-
-    #[test]
-    fn embedded_strategies_are_enabled_unless_disabled() {
+    fn lossy_strategies_are_not_applicable_at_lossless_quality() {
         let selection = Selection {
-            disabled: vec![StrategyId::OxipngZopfliV1, StrategyId::OptipngV1],
+            disabled: vec![StrategyId::OptipngV1],
             ..Selection::default()
         };
         let registry = resolve(&selection).unwrap();
-        assert_eq!(
-            registry,
-            [
-                RegistryEntry {
-                    id: StrategyId::OxipngLibdeflateV1,
-                    state: RegistryState::Runnable(Execution::Embedded),
-                },
-                RegistryEntry {
-                    id: StrategyId::OxipngZopfliV1,
-                    state: RegistryState::Disabled,
-                },
-                RegistryEntry {
-                    id: StrategyId::OptipngV1,
-                    state: RegistryState::Disabled,
-                },
-                RegistryEntry {
-                    id: StrategyId::PngquantV1,
-                    state: RegistryState::NotApplicable,
-                },
-            ]
-        );
+        for id in [
+            StrategyId::PngquantV1,
+            StrategyId::MozjpegV1,
+            StrategyId::JpegliV1,
+        ] {
+            assert_eq!(
+                registry.iter().find(|entry| entry.id == id).unwrap().state,
+                RegistryState::NotApplicable
+            );
+        }
     }
 
     #[cfg(unix)]
     #[test]
-    fn configured_provider_is_resolved_and_version_checked() {
+    fn every_configured_provider_is_accepted_by_capability_not_version() {
         let directory = test_directory();
-        let executable = directory.join("optipng");
-        write_executable(
-            &executable,
-            "#!/bin/sh\nprintf 'OptiPNG version 7.9.1\\n'\n",
-        );
-        let selection = Selection {
-            required: vec![StrategyId::OptipngV1],
-            provider_paths: vec![ProviderPath {
-                provider: ProviderId::Optipng,
-                path: executable.clone(),
-            }],
-            ..Selection::default()
-        };
-
-        let registry = resolve(&selection).unwrap();
-        assert_eq!(registry.len(), 4);
-        assert_eq!(registry[2].id, StrategyId::OptipngV1);
-        assert_eq!(
-            registry[2].state,
-            RegistryState::Runnable(Execution::External {
-                executable: fs::canonicalize(executable).unwrap(),
-                version: "7.9.1".to_owned(),
-            })
-        );
+        let fixtures = [
+            (ProviderId::Optipng, "optipng [options] future release"),
+            (ProviderId::Pngquant, "pngquant --quality future release"),
+            (
+                ProviderId::Jpegtran,
+                "usage: provider -copy all -optimize -progressive -outfile -strict",
+            ),
+            (
+                ProviderId::Mozjpeg,
+                "-quality -progressive -optimize -strict -outfile -revert",
+            ),
+            (
+                ProviderId::Jpegli,
+                "input can be PPM, PNG, APNG, JPEG; compressed JPEG output file; \
+                 --quality --progressive_level future release",
+            ),
+        ];
+        for (provider, output) in fixtures {
+            let executable = directory.join(provider.as_str());
+            let exit = if matches!(provider, ProviderId::Jpegtran | ProviderId::Mozjpeg) {
+                "exit 1"
+            } else {
+                ""
+            };
+            write_executable(
+                &executable,
+                &format!("#!/bin/sh\nprintf '%s\\n' '{output}'\n{exit}\n"),
+            );
+            let selection = Selection {
+                required: vec![provider.strategy()],
+                provider_paths: vec![ProviderPath {
+                    provider,
+                    path: executable.clone(),
+                }],
+                quality: Quality::Numeric(80),
+                disabled: ProviderId::ALL
+                    .into_iter()
+                    .filter(|candidate| *candidate != provider)
+                    .map(ProviderId::strategy)
+                    .collect(),
+                timeout: DEFAULT_STRATEGY_TIMEOUT,
+            };
+            let registry = resolve(&selection).unwrap();
+            assert_eq!(
+                registry
+                    .iter()
+                    .find(|entry| entry.id == provider.strategy())
+                    .unwrap()
+                    .state,
+                RegistryState::Runnable(Execution::External {
+                    executable: fs::canonicalize(executable).unwrap(),
+                })
+            );
+        }
         fs::remove_dir_all(directory).unwrap();
     }
 
     #[cfg(unix)]
     #[test]
-    fn configured_pngquant_is_resolved_for_numeric_quality() {
+    fn wrong_executable_identity_is_optional_unless_required() {
         let directory = test_directory();
-        let executable = directory.join("pngquant");
-        write_executable(&executable, "#!/bin/sh\nprintf '3.0.2\\n'\n");
-        let selection = Selection {
-            required: vec![StrategyId::PngquantV1],
-            provider_paths: vec![ProviderPath {
-                provider: ProviderId::Pngquant,
-                path: executable.clone(),
-            }],
-            quality: Quality::Numeric(80),
-            ..Selection::default()
-        };
-
-        let registry = resolve(&selection).unwrap();
-        assert_eq!(registry[3].id, StrategyId::PngquantV1);
-        assert_eq!(
-            registry[3].state,
-            RegistryState::Runnable(Execution::External {
-                executable: fs::canonicalize(executable).unwrap(),
-                version: "3.0.2".to_owned(),
-            })
-        );
-        fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn pngquant_is_not_applicable_to_lossless_quality() {
-        assert_eq!(
-            resolve(&Selection::default()).unwrap()[3].state,
-            RegistryState::NotApplicable
-        );
-        let required = Selection {
-            required: vec![StrategyId::PngquantV1],
-            ..Selection::default()
-        };
-        assert_eq!(
-            resolve(&required).unwrap_err().message(),
-            "required strategy pngquant-v1 is not applicable at lossless quality"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn incompatible_provider_is_optional_unless_required() {
-        let directory = test_directory();
-        let executable = directory.join("optipng");
-        write_executable(
-            &executable,
-            "#!/bin/sh\nprintf 'OptiPNG version 7.9.0\\n'\n",
-        );
+        let executable = directory.join("cjpeg");
+        write_executable(&executable, "#!/bin/sh\nprintf 'libjpeg-turbo version 9'\n");
         let configured = ProviderPath {
-            provider: ProviderId::Optipng,
+            provider: ProviderId::Mozjpeg,
             path: executable,
         };
         let optional = Selection {
             provider_paths: vec![configured.clone()],
+            quality: Quality::Numeric(80),
+            disabled: vec![
+                StrategyId::OptipngV1,
+                StrategyId::PngquantV1,
+                StrategyId::JpegtranV1,
+                StrategyId::JpegliV1,
+            ],
             ..Selection::default()
         };
         assert_eq!(
-            resolve(&optional).unwrap()[2].state,
+            resolve(&optional)
+                .unwrap()
+                .iter()
+                .find(|entry| entry.id == StrategyId::MozjpegV1)
+                .unwrap()
+                .state,
             RegistryState::Unavailable
         );
 
         let required = Selection {
-            required: vec![StrategyId::OptipngV1],
+            required: vec![StrategyId::MozjpegV1],
             provider_paths: vec![configured],
+            quality: Quality::Numeric(80),
+            disabled: optional.disabled,
             ..Selection::default()
         };
         assert!(
             resolve(&required)
                 .unwrap_err()
                 .message()
-                .contains("unsupported OptiPNG version 7.9.0")
+                .contains("does not expose the required CLI capabilities")
         );
         fs::remove_dir_all(directory).unwrap();
     }
 
     #[cfg(unix)]
     #[test]
-    fn incompatible_pngquant_is_optional_unless_required() {
+    fn incompatible_jpegtran_is_optional_unless_required() {
         let directory = test_directory();
-        let executable = directory.join("pngquant");
-        write_executable(&executable, "#!/bin/sh\nprintf '3.0.1\\n'\n");
+        let executable = directory.join("jpegtran");
+        write_executable(
+            &executable,
+            "#!/bin/sh\nprintf '%s\n' \
+             'usage: provider -optimize -progressive -outfile -strict'\nexit 1\n",
+        );
         let configured = ProviderPath {
-            provider: ProviderId::Pngquant,
+            provider: ProviderId::Jpegtran,
             path: executable,
         };
         let optional = Selection {
             provider_paths: vec![configured.clone()],
-            quality: Quality::Numeric(80),
+            disabled: vec![
+                StrategyId::OptipngV1,
+                StrategyId::MozjpegV1,
+                StrategyId::JpegliV1,
+            ],
             ..Selection::default()
         };
         assert_eq!(
-            resolve(&optional).unwrap()[3].state,
+            resolve(&optional)
+                .unwrap()
+                .iter()
+                .find(|entry| entry.id == StrategyId::JpegtranV1)
+                .unwrap()
+                .state,
             RegistryState::Unavailable
         );
 
         let required = Selection {
-            required: vec![StrategyId::PngquantV1],
+            required: vec![StrategyId::JpegtranV1],
             provider_paths: vec![configured],
-            quality: Quality::Numeric(80),
+            disabled: optional.disabled,
             ..Selection::default()
         };
         assert!(
             resolve(&required)
                 .unwrap_err()
                 .message()
-                .contains("unsupported pngquant version 3.0.1")
+                .contains("does not expose the required CLI capabilities")
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn jpegli_without_jpeg_input_is_unavailable() {
+        let directory = test_directory();
+        let executable = directory.join("cjpegli");
+        write_executable(
+            &executable,
+            "#!/bin/sh\nprintf '%s\n' 'input can be PPM, PNG' \
+             'compressed JPEG output file; --quality --progressive_level'\n",
+        );
+        let selection = Selection {
+            provider_paths: vec![ProviderPath {
+                provider: ProviderId::Jpegli,
+                path: executable,
+            }],
+            quality: Quality::Numeric(80),
+            disabled: vec![
+                StrategyId::OptipngV1,
+                StrategyId::PngquantV1,
+                StrategyId::JpegtranV1,
+                StrategyId::MozjpegV1,
+            ],
+            ..Selection::default()
+        };
+
+        assert_eq!(
+            resolve(&selection)
+                .unwrap()
+                .iter()
+                .find(|entry| entry.id == StrategyId::JpegliV1)
+                .unwrap()
+                .state,
+            RegistryState::Unavailable
         );
         fs::remove_dir_all(directory).unwrap();
     }

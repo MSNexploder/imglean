@@ -1,4 +1,4 @@
-# Version 0.4 PNG Contract
+# Version 0.6 PNG Contract
 
 > [!IMPORTANT]
 > This is the implemented static-PNG validation and acceptance contract.
@@ -19,7 +19,7 @@ repaired.
 
 ## Explicit policy refusals
 
-`acTL`, `fcTL`, or `fdAT` rejects the file because version 0.4 does not process
+`acTL`, `fcTL`, or `fdAT` rejects the file because version 0.6 does not process
 APNG. `caBX` rejects C2PA-bearing PNG. A `tEXt`, `zTXt`, or `iTXt` chunk whose
 keyword is `XML:com.adobe.xmp` rejects standard XMP. Adjacent external C2PA
 manifests are refused by the input contract. No remote lookup occurs.

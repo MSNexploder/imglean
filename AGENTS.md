@@ -23,7 +23,7 @@ Build the smallest reliable CLI that runs applicable image-optimization strategi
 - Open each canonical input during structural preflight. Compare portable source state before and after a bounded controller-owned read through that open file, reject detected ordinary changes, and give the optimizing strategy its own private input derived from those captured bytes. Do not re-resolve the input pathname for capture or overstate capture as an adversarially coherent snapshot.
 - Treat outputs as results of the validated source capture; later source changes do not invalidate them.
 - Never let a provider overwrite the source directly.
-- Apply the version 0.2 basic candidate gate and provider-trust boundary defined in `SCOPE.md`; do not silently claim independently proven pixel or ancillary-payload equivalence.
+- Apply the version 0.6 basic candidate gates and provider-trust boundary defined in `SCOPE.md`; do not silently claim independently proven pixel or ancillary-payload equivalence.
 - Treat accepted ancillary payloads as opaque. Refuse `caBX`, the standard XMP keyword in PNG text chunks, and the documented conservative adjacent `.c2pa` heuristics. Do not add ICC, Exif, XML, or language-tag parsers or retrieve remote manifests.
 - Retain the validated final component of each original input argument for destination naming and collision detection; source canonicalization must not change it. Reject inputs observed as final-component symlinks, then resolve ancestor symlinks and output paths to absolute canonical paths during preflight without claiming a race-free symlink check. Reject repeated canonical input paths before optimization. Require printable-ASCII basenames ending in `.png` without ASCII case sensitivity, and fold ASCII case when detecting destination collisions on every platform. Distinct hard links to one source may be processed as distinct explicit inputs.
 - Require an explicit output directory and reject every destination that aliases an input. Version 0.2 never writes or replaces sources, intentionally changes their metadata, or mixes output modes; filesystem-managed access-time updates caused by reads are outside that guarantee.
@@ -37,16 +37,16 @@ Build the smallest reliable CLI that runs applicable image-optimization strategi
 ## Providers and licensing
 
 - Use the vocabulary from `SCOPE.md`: provider, strategy, candidate, and winner.
-- Version 0.2 includes two audited embedded OxiPNG strategies and one explicitly supported external OptiPNG adapter.
+- Version 0.6 includes two audited embedded OxiPNG strategies plus explicitly supported external OptiPNG, pngquant, jpegtran, MozJPEG, and Jpegli adapters.
 - Enable every embedded strategy compatible with the active policy by default. Discover explicitly supported external executables during preflight and enable compatible strategies when available; never download or install them.
-- Resolve an external provider once per invocation, record and validate its reported version, and distinguish normal automatic absence from failure of a provider the user explicitly requires.
+- Resolve an external provider once per invocation, validate its required CLI capabilities without gating a reported version, and distinguish normal automatic absence from failure of a provider the user explicitly requires.
 - Ensure no component of the built-in workflow initiates network requests or remote-service calls.
 - Run providers in separate worker processes for crash isolation and portable byte and elapsed-time control, not as a security or hard memory-containment boundary.
 - Use the validated controller-owned source capture as the baseline candidate; do not spawn a worker or create a separate artifact for it before winner selection.
 - Warn and continue deterministic selection among the baseline and remaining accepted candidates when an optimizing strategy fails or produces a rejected candidate.
 - Document and test which provider limits are hard-enforced, monitored, or configured.
 - Complete the provider-execution contract before enabling worker-run provider code.
-- Configure behavior-affecting provider options explicitly and record provider versions in release artifacts.
+- Configure behavior-affecting provider options explicitly and record capability contracts plus reproducible CI provider revisions in release artifacts.
 - Pin every behavior-affecting OxiPNG option explicitly; do not inherit defaults for interlacing, representation reduction, alpha handling, metadata, error repair, limits, or output behavior.
 - ImgLean is licensed under Apache-2.0.
 - Audit every direct, transitive, vendored, and native dependency before distribution.
@@ -64,12 +64,12 @@ mise run check
 
 Use `mise run format` when formatting needs correction. Do not bypass `--locked`, the all-target/all-feature Clippy coverage, warnings-as-errors, or the complete test task with ad hoc Cargo commands.
 
-Provider and validator changes require a checked-in, versioned, bounded PNG corpus covering the complete accepted subset plus malformed, oversized, metadata-bearing, C2PA/XMP-bearing, unchanged, and semantically changed images. OxiPNG needs at least one validated size reduction. Input and output changes require tests for batch-preflight atomicity, repeated canonical inputs, source/destination aliases, ASCII name collisions, C2PA path transformations, destination appearance races, capture-time semantics, interruption on both sides of publication, hard-link publication and unsupported filesystems, platform metadata behavior, larger candidates, optimizing-provider failures, baseline selection, current-run temporary-path cleanup, refusal to delete earlier artifacts, diagnostics escaping and routing, and filesystem failures.
+Provider and validator changes require checked-in, versioned, bounded format corpora covering each accepted subset plus malformed, oversized, metadata-bearing, C2PA/XMP-bearing, unchanged, and semantically changed images. Every provider family needs at least one validated size reduction. Input and output changes require tests for batch-preflight atomicity, repeated canonical inputs, source/destination aliases, ASCII name collisions, C2PA path transformations, destination appearance races, capture-time semantics, interruption on both sides of publication, hard-link publication and unsupported filesystems, platform metadata behavior, larger candidates, optimizing-provider failures, baseline selection, current-run temporary-path cleanup, refusal to delete earlier artifacts, diagnostics escaping and routing, and filesystem failures.
 
 Every registered embedded strategy must execute directly and through the
-controller in CI. Every supported external adapter must run against each
-supported provider version on every target where support is claimed, with
-additional coverage for absence, incompatible versions, failure, timeout,
+controller in CI. Every supported external adapter must run against a pinned
+representative provider revision on every target where support is claimed, with
+additional coverage for absence, capability mismatch, failure, timeout,
 malformed output, and larger output. `--all-features` compilation alone is not
 provider integration coverage.
 

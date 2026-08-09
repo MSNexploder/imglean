@@ -77,7 +77,7 @@ def main() -> int:
             raise SystemExit("OptiPNG integration changed the source or created extra output")
         stdout = result.stdout.decode(errors="replace")
         stderr = result.stderr.decode(errors="replace")
-        if "-> optipng-v1" not in stdout or "provider version 7.9.1" not in stderr:
+        if "-> optipng-v1" not in stdout or "using optipng-v1 provider at" not in stderr:
             raise SystemExit("OptiPNG discovery or winner diagnostics are missing")
 
         all_source = root / "all-strategies.png"

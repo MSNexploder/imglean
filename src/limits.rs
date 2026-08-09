@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-pub const LIMITS_VERSION: &str = "v4";
+pub const LIMITS_VERSION: &str = "v7";
 
 pub const MAX_INPUTS: usize = 128;
 pub const MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
@@ -21,10 +21,11 @@ pub const MAX_ANCILLARY_BYTES: usize = 16 * 1024 * 1024;
 
 pub const VALIDATION_TIMEOUT: Duration = Duration::from_secs(5);
 pub const PROVIDER_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(2);
-pub const OXIPNG_TIMEOUT: Duration = Duration::from_secs(55);
-pub const EMBEDDED_WORKER_TIMEOUT: Duration = Duration::from_secs(60);
-pub const OPTIPNG_TIMEOUT: Duration = Duration::from_secs(60);
-pub const PNGQUANT_TIMEOUT: Duration = Duration::from_secs(60);
+pub const DEFAULT_STRATEGY_TIMEOUT: Duration = Duration::from_secs(60);
+pub const MIN_STRATEGY_TIMEOUT_SECONDS: u64 = 6;
+pub const MAX_STRATEGY_TIMEOUT_SECONDS: u64 = 10 * 60;
+pub const OXIPNG_CLEANUP_RESERVE: Duration = Duration::from_secs(5);
+pub const MIN_OXIPNG_TIMEOUT: Duration = Duration::from_secs(1);
 pub const INVOCATION_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 #[cfg(test)]
@@ -32,11 +33,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn provider_timeout_leaves_controller_cleanup_time() {
-        assert!(OXIPNG_TIMEOUT < EMBEDDED_WORKER_TIMEOUT);
-        assert!(EMBEDDED_WORKER_TIMEOUT < INVOCATION_TIMEOUT);
-        assert!(OPTIPNG_TIMEOUT < INVOCATION_TIMEOUT);
-        assert!(PNGQUANT_TIMEOUT < INVOCATION_TIMEOUT);
+    fn strategy_timeout_range_preserves_oxipng_and_invocation_cleanup_time() {
+        assert!(Duration::from_secs(MIN_STRATEGY_TIMEOUT_SECONDS) > OXIPNG_CLEANUP_RESERVE);
+        assert_eq!(
+            Duration::from_secs(MIN_STRATEGY_TIMEOUT_SECONDS) - OXIPNG_CLEANUP_RESERVE,
+            MIN_OXIPNG_TIMEOUT
+        );
+        assert!(DEFAULT_STRATEGY_TIMEOUT > OXIPNG_CLEANUP_RESERVE);
+        assert!(Duration::from_secs(MAX_STRATEGY_TIMEOUT_SECONDS) < INVOCATION_TIMEOUT);
     }
 
     #[test]

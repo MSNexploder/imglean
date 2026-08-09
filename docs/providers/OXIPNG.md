@@ -20,7 +20,7 @@ idat_recoding: true
 scale_16: false
 strip: None
 fast_evaluation: true
-timeout: 55 seconds
+timeout: effective strategy timeout minus 5 seconds, minimum 1 (default: 55 seconds)
 max_decompressed_size: 256 MiB
 ```
 

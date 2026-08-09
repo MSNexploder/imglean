@@ -1,12 +1,12 @@
 # ImgLean
 
-ImgLean is a local CLI that runs every applicable PNG optimization strategy and
+ImgLean is a local CLI that runs every applicable PNG or JPEG optimization strategy and
 writes the smallest candidate that passes its bounded validation gate. The
 validated source is always the first candidate, so a successful output is never
 larger than its source. Sources are never replaced; existing regular output
 files are replaced only after the new result is complete and validated.
 
-Version 0.4 is implemented in source. Target-specific 64-bit macOS, Linux, and
+Version 0.6 is implemented in source. Target-specific 64-bit macOS, Linux, and
 Windows artifacts remain unpublished and unqualified until their native release
 gates pass.
 
@@ -17,23 +17,26 @@ existing regular files; directories, symbolic links, special files, and input
 aliases are rejected:
 
 ```sh
-imglean --output ./optimized photo.png icon.png
+imglean --output ./optimized photo.jpg icon.png
 ```
 
 The default ordered strategy set is:
 
 1. embedded `oxipng-libdeflate-v1`;
 2. embedded `oxipng-zopfli-v1`;
-3. external `optipng-v1` when OptiPNG 7.9.1 is found on `PATH`; and
-4. external `pngquant-v1` at numeric quality when pngquant 3.0.2 or 3.0.3 is
-   found.
+3. external `optipng-v1` for PNG;
+4. external `pngquant-v1` for PNG at numeric quality;
+5. external `jpegtran-v1` for lossless JPEG optimization;
+6. external `mozjpeg-v1` for JPEG at numeric quality; and
+7. external `jpegli-v1` for JPEG at numeric quality.
 
 `--quality lossless|1..100` selects the fidelity policy and defaults to
-`lossless`. The two OxiPNG strategies and OptiPNG remain eligible at every
-setting because they are lossless. pngquant participates only for numeric
-quality and maps `Q` to its native `--quality 0-Q` option. Lower values permit
-more color reduction; 100 requests pngquant's highest native target, but is
-still lossy for images with more than 256 colors.
+`lossless`. The two OxiPNG strategies, OptiPNG, and jpegtran remain eligible at
+every setting because they are lossless. pngquant, MozJPEG, and Jpegli
+participate only at numeric quality. pngquant maps `Q` to its native
+`--quality 0-Q` range; lower values permit more color reduction, while 100
+still permits palette conversion. MozJPEG and Jpegli receive `Q` as their
+native quality value.
 
 All compatible embedded strategies are enabled by default. An automatically
 missing or incompatible external provider remains visible as `unavailable` but
@@ -45,6 +48,9 @@ imglean --require-strategy optipng-v1 --output ./optimized photo.png
 imglean --provider optipng /absolute/path/to/optipng --output ./optimized photo.png
 imglean --quality 80 --output ./optimized photo.png
 imglean --quality 80 --provider pngquant /absolute/path/to/pngquant --output ./optimized photo.png
+imglean --provider jpegtran /absolute/path/to/jpegtran --output ./optimized photo.jpg
+imglean --quality 80 --provider mozjpeg /absolute/path/to/cjpeg --output ./optimized photo.jpg
+imglean --quality 80 --provider jpegli /absolute/path/to/cjpegli --output ./optimized photo.jpg
 imglean --jobs 1 --output ./optimized photo.png
 ```
 
@@ -52,12 +58,15 @@ imglean --jobs 1 --output ./optimized photo.png
 downloads, installs, or updates external providers. Run `imglean --help` for the
 complete CLI surface.
 
-pngquant discovery uses `PATH` or an explicit `--provider pngquant PATH` on
-every platform. An unavailable numeric-quality provider is reported as
-`unavailable`; at lossless quality pngquant is reported as `not applicable` and
-is not probed.
+External discovery uses `PATH` or an explicit `--provider NAME PATH` on every
+platform. ImgLean verifies the required CLI capabilities instead of accepting
+or rejecting release-number strings. CI pins representative upstream revisions
+for reproducibility, but runtime compatibility is capability-based. An
+unavailable provider is reported as `unavailable`; at lossless quality pngquant,
+MozJPEG, and Jpegli are `not applicable` and are not probed. jpegtran remains
+applicable at lossless and numeric quality.
 
-Version 0.4 accepts bounded static PNGs in every standard color-type and
+Version 0.6 accepts bounded static PNGs in every standard color-type and
 bit-depth combination, including Adam7. It verifies container checksums and a
 complete decode, requires candidate dimensions to match, and refuses APNG,
 `caBX`, and XMP in PNG text chunks. Other accepted ancillary data is opaque.
@@ -66,14 +75,21 @@ configuration; it does not independently compare pixels, calculate perceptual
 quality, or compare ancillary payloads. pngquant intentionally changes colors
 and strips optional metadata; the basic PNG gate still rejects malformed,
 animated, wrong-sized, C2PA, and XMP candidates.
-See the [PNG contract](docs/contracts/PNG.md) for the exact boundary.
+It also accepts bounded 8-bit baseline, extended sequential, and progressive
+Huffman JPEGs, requires a complete decode and matching candidate dimensions,
+and refuses standard XMP plus APP11. Other accepted JPEG application and comment
+segments are opaque. Numeric JPEG strategies may therefore drop Exif
+orientation and other application metadata; use the default lossless policy
+when that metadata must be preserved. See the [PNG](docs/contracts/PNG.md) and
+[JPEG](docs/contracts/JPEG.md) contracts for the exact boundaries.
 
 Exit statuses are `0` for clean success, `3` when all outputs succeed despite
 an optimizer warning, `1` for processing or reporting failure, and `2` for
 invalid CLI usage. Per-input results, including the winning strategy, go to
-standard output. Each block lists the complete strategy registry; `->` marks
-the winner, `!` marks a warning or rejected candidate, and strategies that were
-disabled, unavailable, not applicable, or not run retain explicit rows:
+standard output. Each block lists the registry rows for that input's format;
+`->` marks the winner, `!` marks a warning or rejected candidate, and strategies
+that were disabled, unavailable, not applicable at the selected quality, or not
+run retain explicit rows:
 
 ```text
 photo.png
@@ -85,12 +101,16 @@ photo.png
      output                   /path/to/optimized/photo.png
 ```
 
-Strategy warnings remain inside the relevant image block. Provider records,
-failure details, and the compact invocation summary go to standard error.
+Strategy warnings remain inside the relevant image block. Provider records for
+formats present in the batch, failure details, and the compact invocation
+summary go to standard error.
 Inputs are processed sequentially. For each input, ImgLean runs up to two
 strategy workers concurrently by default when the machine exposes at least two
 CPUs. `--jobs N` selects one to three workers; reporting and tie-breaking always
-follow registry order rather than completion order.
+follow registry order rather than completion order. `--timeout SECONDS` sets
+the per-strategy worker deadline from 6 through 600 seconds and defaults to 60;
+each worker is capped by the remaining invocation time. Provider discovery,
+validation, and the invocation-wide deadline are unchanged.
 
 ## Build and validate
 
@@ -106,22 +126,27 @@ with warnings denied, and runs the complete locked test suite. Release work also
 runs `mise run audit`, `mise run notices`, and `mise run sbom`.
 
 CI executes both embedded strategies directly and through the controller on all
-release targets. Separate native jobs exercise OptiPNG 7.9.1 and pngquant 3.0.2
-and 3.0.3, including automatic discovery and real provider reductions.
+release targets. Separate native jobs build pinned representative revisions of
+all five external providers and require real reductions through capability
+discovery and the complete controller path.
 
 ## Documentation
 
-- [SCOPE.md](SCOPE.md) defines the product and version 0.4 boundary.
+- [SCOPE.md](SCOPE.md) defines the product and version 0.6 boundary.
 - [ARCHITECTURE.md](ARCHITECTURE.md) defines components and data flow.
 - The [input](docs/contracts/INPUT_AND_BATCH.md),
   [PNG](docs/contracts/PNG.md),
+  [JPEG](docs/contracts/JPEG.md),
   [provider](docs/contracts/PROVIDER_EXECUTION.md),
   [output](docs/contracts/OUTPUT.md), and
   [limits](docs/contracts/LIMITS.md) contracts define exact behavior.
 - Provider-specific settings are recorded for
   [OxiPNG](docs/providers/OXIPNG.md),
-  [OptiPNG](docs/providers/OPTIPNG.md), and
-  [pngquant](docs/providers/PNGQUANT.md).
+  [OptiPNG](docs/providers/OPTIPNG.md),
+  [pngquant](docs/providers/PNGQUANT.md),
+  [jpegtran](docs/providers/JPEGTRAN.md),
+  [MozJPEG](docs/providers/MOZJPEG.md), and
+  [Jpegli](docs/providers/JPEGLI.md).
 - [docs/RELEASE.md](docs/RELEASE.md) defines target qualification and artifact
   contents.
 

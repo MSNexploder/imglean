@@ -7,14 +7,14 @@ use std::time::Instant;
 use crate::artifacts::Artifacts;
 use crate::cli::Arguments;
 use crate::diagnostics::escape_path;
+use crate::image::ValidatedImage;
 use crate::input::{self, CaptureError, PreflightError, PreflightInput};
 use crate::limits::{INVOCATION_TIMEOUT, MAX_AGGREGATE_SOURCE_BYTES};
 use crate::output::{self, OutputError};
-use crate::png;
 use crate::strategy::{self, Execution, RegistryEntry, RegistryState, Strategy, StrategyId};
 use crate::worker::{self, StrategyResult};
 
-pub fn run(arguments: Arguments, stdout: impl Write, mut stderr: impl Write) -> i32 {
+pub fn run(arguments: Arguments, stdout: impl Write, stderr: impl Write) -> i32 {
     let quality = arguments.strategies.quality;
     let registry = match strategy::resolve(&arguments.strategies) {
         Ok(registry) => registry,
@@ -31,22 +31,6 @@ pub fn run(arguments: Arguments, stdout: impl Write, mut stderr: impl Write) -> 
             return 1;
         }
     };
-    for entry in &registry {
-        if let RegistryState::Runnable(Execution::External {
-            executable,
-            version,
-        }) = &entry.state
-        {
-            write_stderr(
-                &mut stderr,
-                &format!(
-                    "imglean: using {} provider version {version} at {}\n",
-                    entry.id,
-                    escape_path(executable.as_os_str())
-                ),
-            );
-        }
-    }
     run_with_strategies(
         arguments,
         stdout,
@@ -54,8 +38,8 @@ pub fn run(arguments: Arguments, stdout: impl Write, mut stderr: impl Write) -> 
         MAX_AGGREGATE_SOURCE_BYTES,
         INVOCATION_TIMEOUT,
         registry,
-        move |artifacts, source, strategy| {
-            worker::run_strategy(artifacts, source, strategy, quality)
+        move |artifacts, source, strategy, timeout| {
+            worker::run_strategy(artifacts, source, strategy, quality, timeout)
         },
     )
 }
@@ -67,9 +51,10 @@ fn run_with_strategies(
     maximum_aggregate_bytes: u64,
     invocation_timeout: std::time::Duration,
     registry: Vec<RegistryEntry>,
-    execute: impl Fn(&mut Artifacts, &[u8], &Strategy) -> StrategyResult + Sync,
+    execute: impl Fn(&mut Artifacts, &[u8], &Strategy, std::time::Duration) -> StrategyResult + Sync,
 ) -> i32 {
     let jobs = arguments.jobs;
+    let strategy_timeout = arguments.strategies.timeout;
     let mut budget = InvocationBudget {
         started: Instant::now(),
         timeout: invocation_timeout,
@@ -87,6 +72,23 @@ fn run_with_strategies(
             return 1;
         }
     };
+    for entry in &registry {
+        if batch
+            .inputs
+            .iter()
+            .any(|input| input.format == entry.id.format())
+            && let RegistryState::Runnable(Execution::External { executable }) = &entry.state
+        {
+            write_stderr(
+                &mut stderr,
+                &format!(
+                    "imglean: using {} provider at {}\n",
+                    entry.id,
+                    escape_path(executable.as_os_str())
+                ),
+            );
+        }
+    }
 
     let mut artifacts = Artifacts::new(batch.output_directory.clone());
     let mut succeeded = 0usize;
@@ -111,6 +113,7 @@ fn run_with_strategies(
             &mut budget,
             &registry,
             jobs,
+            strategy_timeout,
             &execute,
         );
         let mut stop_after_reporting = false;
@@ -188,9 +191,17 @@ fn process_input(
     budget: &mut InvocationBudget,
     registry: &[RegistryEntry],
     jobs: usize,
-    execute: &(impl Fn(&mut Artifacts, &[u8], &Strategy) -> StrategyResult + Sync),
+    strategy_timeout: std::time::Duration,
+    execute: &(impl Fn(&mut Artifacts, &[u8], &Strategy, std::time::Duration) -> StrategyResult + Sync),
 ) -> InputOutcome {
-    let mut attempts = registry.iter().map(Attempt::from).collect::<Vec<_>>();
+    let format_registry = registry
+        .iter()
+        .filter(|entry| entry.id.format() == input.format)
+        .collect::<Vec<_>>();
+    let mut attempts = format_registry
+        .iter()
+        .map(|entry| Attempt::from_entry(entry))
+        .collect::<Vec<_>>();
     let source_bytes =
         match input.capture(&mut budget.aggregate_bytes, budget.maximum_aggregate_bytes) {
             Ok(bytes) => bytes,
@@ -207,13 +218,10 @@ fn process_input(
                 };
             }
         };
-    let source = match png::validate_source(&source_bytes) {
+    let source = match ValidatedImage::validate_source(input.format, &source_bytes) {
         Ok(source) => source,
-        Err(error) => {
-            return InputOutcome::Failure {
-                reason: error.message(),
-                attempts,
-            };
+        Err(reason) => {
+            return InputOutcome::Failure { reason, attempts };
         }
     };
 
@@ -226,7 +234,7 @@ fn process_input(
             attempts,
         };
     }
-    let runnable = registry
+    let runnable = format_registry
         .iter()
         .enumerate()
         .filter_map(|(index, entry)| match &entry.state {
@@ -247,6 +255,7 @@ fn process_input(
         &source_bytes,
         runnable,
         jobs,
+        strategy_timeout,
         budget.deadline(),
         execute,
     );
@@ -259,7 +268,7 @@ fn process_input(
         };
         let strategy = attempts[index].strategy;
         let outcome = match result {
-            StrategyResult::Candidate(bytes) => match png::validate_candidate(&source, &bytes) {
+            StrategyResult::Candidate(bytes) => match source.validate_candidate(&bytes) {
                 Ok(validated) if validated.encoded_bytes() < output_bytes => {
                     output_bytes = validated.encoded_bytes();
                     winner = Some(bytes);
@@ -267,7 +276,7 @@ fn process_input(
                     AttemptOutcome::Candidate(validated.encoded_bytes())
                 }
                 Ok(validated) => AttemptOutcome::Candidate(validated.encoded_bytes()),
-                Err(error) => AttemptOutcome::Rejected(error.message()),
+                Err(reason) => AttemptOutcome::Rejected(reason),
             },
             StrategyResult::NoCandidate => AttemptOutcome::NoCandidate,
             StrategyResult::Warning(message) => AttemptOutcome::Warning(message),
@@ -352,8 +361,8 @@ struct InvocationDeadline {
 }
 
 impl InvocationDeadline {
-    fn elapsed(self) -> bool {
-        self.started.elapsed() > self.timeout
+    fn remaining(self) -> Option<std::time::Duration> {
+        self.timeout.checked_sub(self.started.elapsed())
     }
 }
 
@@ -362,8 +371,9 @@ fn execute_parallel(
     source: &[u8],
     runnable: Vec<(usize, Strategy)>,
     jobs: usize,
+    strategy_timeout: std::time::Duration,
     deadline: InvocationDeadline,
-    execute: &(impl Fn(&mut Artifacts, &[u8], &Strategy) -> StrategyResult + Sync),
+    execute: &(impl Fn(&mut Artifacts, &[u8], &Strategy, std::time::Duration) -> StrategyResult + Sync),
 ) -> (Vec<(usize, Option<StrategyResult>)>, bool) {
     if runnable.is_empty() {
         return (Vec::new(), false);
@@ -383,11 +393,16 @@ fn execute_parallel(
                     let Some((registry_index, strategy)) = runnable.get(job) else {
                         break;
                     };
-                    let result = if deadline.elapsed() {
-                        None
-                    } else {
+                    let result = if let Some(remaining) = deadline.remaining() {
                         let mut artifacts = Artifacts::new(artifact_directory.to_path_buf());
-                        Some(execute(&mut artifacts, source, strategy))
+                        Some(execute(
+                            &mut artifacts,
+                            source,
+                            strategy,
+                            strategy_timeout.min(remaining),
+                        ))
+                    } else {
+                        None
                     };
                     if sender.send((*registry_index, result)).is_err() {
                         break;
@@ -440,8 +455,8 @@ enum AttemptOutcome {
     NotRun,
 }
 
-impl From<&RegistryEntry> for Attempt {
-    fn from(entry: &RegistryEntry) -> Self {
+impl Attempt {
+    fn from_entry(entry: &RegistryEntry) -> Self {
         let outcome = match entry.state {
             RegistryState::Runnable(_) => AttemptOutcome::NotRun,
             RegistryState::Disabled => AttemptOutcome::Disabled,
@@ -685,7 +700,7 @@ mod tests {
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
             test_registry(),
-            |_, source, _| StrategyResult::Candidate(source.to_vec()),
+            |_, source, _, _| StrategyResult::Candidate(source.to_vec()),
         );
         assert_eq!(status, 0);
         assert_eq!(fs::read(output.join("source.png")).unwrap(), bytes);
@@ -710,16 +725,13 @@ mod tests {
             .into_iter()
             .map(|id| RegistryEntry {
                 id,
-                state: RegistryState::Runnable(
-                    if matches!(id, StrategyId::OptipngV1 | StrategyId::PngquantV1) {
-                        Execution::External {
-                            executable: PathBuf::from("unused"),
-                            version: "7.9.1".to_owned(),
-                        }
-                    } else {
-                        Execution::Embedded
-                    },
-                ),
+                state: RegistryState::Runnable(if StrategyId::EMBEDDED.contains(&id) {
+                    Execution::Embedded
+                } else {
+                    Execution::External {
+                        executable: PathBuf::from("unused"),
+                    }
+                }),
             })
             .collect::<Vec<_>>();
         let attempted = Mutex::new(Vec::new());
@@ -733,7 +745,7 @@ mod tests {
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
             strategies,
-            |_, _, strategy| {
+            |_, _, strategy, _| {
                 attempted.lock().unwrap().push(strategy.id);
                 match strategy.id {
                     StrategyId::OxipngLibdeflateV1 => {
@@ -744,14 +756,21 @@ mod tests {
                     }
                     StrategyId::OptipngV1 => StrategyResult::Candidate(winner.clone()),
                     StrategyId::PngquantV1 => StrategyResult::NoCandidate,
+                    StrategyId::JpegtranV1 | StrategyId::MozjpegV1 | StrategyId::JpegliV1 => {
+                        unreachable!()
+                    }
                 }
             },
         );
 
         assert_eq!(status, 3);
         let attempted = attempted.into_inner().unwrap();
-        assert_eq!(attempted.len(), StrategyId::ALL.len());
-        assert!(StrategyId::ALL.iter().all(|id| attempted.contains(id)));
+        assert_eq!(attempted.len(), 4);
+        assert!(
+            attempted
+                .iter()
+                .all(|id| id.format() == crate::image::ImageFormat::Png)
+        );
         assert_eq!(fs::read(output.join("source.png")).unwrap(), base);
         let stdout = String::from_utf8(stdout).unwrap();
         assert!(stdout.contains("baseline                 103 bytes"));
@@ -762,10 +781,84 @@ mod tests {
             .find(|line| line.contains("-> optipng-v1"))
             .expect("winner row");
         assert!(winner_line.contains("67 bytes  winner; saved 36 bytes"));
-        assert_eq!(
-            String::from_utf8(stderr).unwrap(),
-            "Summary: 1 succeeded, 1 warning\n"
+        for strategy in [
+            StrategyId::JpegtranV1,
+            StrategyId::MozjpegV1,
+            StrategyId::JpegliV1,
+        ] {
+            assert!(!stdout.contains(strategy.as_str()));
+        }
+        let stderr = String::from_utf8(stderr).unwrap();
+        assert!(stderr.ends_with("Summary: 1 succeeded, 1 warning\n"));
+        assert!(!stderr.contains("jpegtran-v1"));
+        assert!(!stderr.contains("mozjpeg-v1"));
+        assert!(!stderr.contains("jpegli-v1"));
+    }
+
+    #[test]
+    fn jpeg_runs_only_jpeg_strategies_and_keeps_a_valid_smaller_candidate() {
+        let directory = TestDirectory::new();
+        let output = directory.create_directory("out");
+        let source = directory.path.join("source.jpg");
+        let baseline = include_bytes!("../tests/corpus/jpeg/v1/accepted/baseline.jpg");
+        let candidate = include_bytes!("../tests/corpus/jpeg/v1/accepted/progressive.jpg");
+        fs::write(&source, baseline).unwrap();
+        let registry = StrategyId::ALL
+            .into_iter()
+            .map(|id| RegistryEntry {
+                id,
+                state: if StrategyId::EMBEDDED.contains(&id) {
+                    RegistryState::Runnable(Execution::Embedded)
+                } else {
+                    RegistryState::Runnable(Execution::External {
+                        executable: PathBuf::from("unused"),
+                    })
+                },
+            })
+            .collect();
+        let attempted = Mutex::new(Vec::new());
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let status = run_with_strategies(
+            arguments(output.clone(), vec![source]),
+            &mut stdout,
+            &mut stderr,
+            MAX_AGGREGATE_SOURCE_BYTES,
+            INVOCATION_TIMEOUT,
+            registry,
+            |_, source, strategy, _| {
+                attempted.lock().unwrap().push(strategy.id);
+                match strategy.id {
+                    StrategyId::JpegtranV1 | StrategyId::MozjpegV1 => {
+                        StrategyResult::Candidate(source.to_vec())
+                    }
+                    StrategyId::JpegliV1 => StrategyResult::Candidate(candidate.to_vec()),
+                    _ => unreachable!(),
+                }
+            },
         );
+
+        assert_eq!(status, 0, "{}", String::from_utf8_lossy(&stderr));
+        let stderr = String::from_utf8(stderr).unwrap();
+        assert!(!stderr.contains("optipng-v1"));
+        assert!(!stderr.contains("pngquant-v1"));
+        let attempted = attempted.into_inner().unwrap();
+        assert_eq!(attempted.len(), 3);
+        assert!(attempted.contains(&StrategyId::JpegtranV1));
+        assert!(attempted.contains(&StrategyId::MozjpegV1));
+        assert!(attempted.contains(&StrategyId::JpegliV1));
+        assert_eq!(fs::read(output.join("source.jpg")).unwrap(), candidate);
+        let stdout = String::from_utf8(stdout).unwrap();
+        assert!(stdout.contains("-> jpegli-v1"));
+        for strategy in [
+            StrategyId::OxipngLibdeflateV1,
+            StrategyId::OxipngZopfliV1,
+            StrategyId::OptipngV1,
+            StrategyId::PngquantV1,
+        ] {
+            assert!(!stdout.contains(strategy.as_str()));
+        }
     }
 
     #[test]
@@ -803,7 +896,7 @@ mod tests {
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
             registry,
-            |_, source, _| StrategyResult::Candidate(source.to_vec()),
+            |_, source, _, _| StrategyResult::Candidate(source.to_vec()),
         );
 
         assert_eq!(status, 0);
@@ -846,7 +939,7 @@ mod tests {
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
             registry,
-            |_, _, strategy| {
+            |_, _, strategy, _| {
                 let index = StrategyId::ALL
                     .iter()
                     .position(|id| *id == strategy.id)
@@ -899,7 +992,7 @@ mod tests {
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
             registry,
-            |_, _, _| StrategyResult::Candidate(winner.clone()),
+            |_, _, _, _| StrategyResult::Candidate(winner.clone()),
         );
 
         assert_eq!(status, 0);
@@ -921,7 +1014,7 @@ mod tests {
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
             test_registry(),
-            |_, _, _| panic!("strategy must not run"),
+            |_, _, _, _| panic!("strategy must not run"),
         );
         assert_eq!(status, 1);
         assert!(stdout.is_empty());
@@ -949,7 +1042,7 @@ mod tests {
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
             test_registry(),
-            |_, source, _| StrategyResult::Candidate(source.to_vec()),
+            |_, source, _, _| StrategyResult::Candidate(source.to_vec()),
         );
         assert_eq!(status, 1);
         assert!(output.join("first.png").exists());
@@ -975,7 +1068,7 @@ mod tests {
             0,
             INVOCATION_TIMEOUT,
             test_registry(),
-            |_, _, _| panic!("strategy must not run"),
+            |_, _, _, _| panic!("strategy must not run"),
         );
 
         assert_eq!(status, 1);
@@ -1009,7 +1102,7 @@ mod tests {
             MAX_AGGREGATE_SOURCE_BYTES,
             std::time::Duration::ZERO,
             test_registry(),
-            |_, _, _| panic!("strategy must not run"),
+            |_, _, _, _| panic!("strategy must not run"),
         );
 
         assert_eq!(status, 1);
@@ -1022,7 +1115,7 @@ mod tests {
     }
 
     #[test]
-    fn elapsed_limit_stops_before_the_next_strategy() {
+    fn invocation_deadline_caps_workers_and_stops_before_the_next_strategy() {
         let directory = TestDirectory::new();
         let output = directory.create_directory("out");
         let source = directory.path.join("source.png");
@@ -1035,18 +1128,22 @@ mod tests {
             })
             .collect();
         let attempts = AtomicUsize::new(0);
+        let received_timeout = Mutex::new(None);
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
+        let mut arguments = arguments(output.clone(), vec![source]);
+        arguments.strategies.timeout = std::time::Duration::from_secs(600);
 
         let status = run_with_strategies(
-            arguments(output.clone(), vec![source]),
+            arguments,
             &mut stdout,
             &mut stderr,
             MAX_AGGREGATE_SOURCE_BYTES,
             std::time::Duration::from_secs(1),
             strategies,
-            |_, source, _| {
+            |_, source, _, timeout| {
                 attempts.fetch_add(1, Ordering::Relaxed);
+                *received_timeout.lock().unwrap() = Some(timeout);
                 std::thread::sleep(std::time::Duration::from_millis(1_100));
                 StrategyResult::Candidate(source.to_vec())
             },
@@ -1054,6 +1151,12 @@ mod tests {
 
         assert_eq!(status, 1);
         assert_eq!(attempts.load(Ordering::Relaxed), 1);
+        assert!(
+            received_timeout
+                .into_inner()
+                .unwrap()
+                .is_some_and(|timeout| timeout <= std::time::Duration::from_secs(1))
+        );
         assert!(!output.join("source.png").exists());
         assert!(
             String::from_utf8(stderr)
@@ -1080,7 +1183,7 @@ mod tests {
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
             test_registry(),
-            |_, _, _| StrategyResult::Candidate(larger.clone()),
+            |_, _, _, _| StrategyResult::Candidate(larger.clone()),
         );
 
         assert_eq!(status, 0);
@@ -1105,7 +1208,7 @@ mod tests {
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
             test_registry(),
-            |_, _, _| StrategyResult::Warning("injected provider failure".to_owned()),
+            |_, _, _, _| StrategyResult::Warning("injected provider failure".to_owned()),
         );
 
         assert_eq!(status, 3);
@@ -1144,12 +1247,16 @@ mod tests {
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
             strategies,
-            |_, _, strategy| match strategy.id {
+            |_, _, strategy, _| match strategy.id {
                 StrategyId::OxipngLibdeflateV1 => {
                     StrategyResult::Warning("injected warning".to_owned())
                 }
                 StrategyId::OxipngZopfliV1 => StrategyResult::Failure("injected fatal failure"),
-                StrategyId::OptipngV1 | StrategyId::PngquantV1 => unreachable!(),
+                StrategyId::OptipngV1
+                | StrategyId::PngquantV1
+                | StrategyId::JpegtranV1
+                | StrategyId::MozjpegV1
+                | StrategyId::JpegliV1 => unreachable!(),
             },
         );
 
@@ -1188,10 +1295,14 @@ mod tests {
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
             strategies,
-            |_, _, strategy| match strategy.id {
+            |_, _, strategy, _| match strategy.id {
                 StrategyId::OxipngLibdeflateV1 => StrategyResult::NoCandidate,
                 StrategyId::OxipngZopfliV1 => StrategyResult::Candidate(b"not a PNG".to_vec()),
-                StrategyId::OptipngV1 | StrategyId::PngquantV1 => unreachable!(),
+                StrategyId::OptipngV1
+                | StrategyId::PngquantV1
+                | StrategyId::JpegtranV1
+                | StrategyId::MozjpegV1
+                | StrategyId::JpegliV1 => unreachable!(),
             },
         );
 
@@ -1222,8 +1333,12 @@ mod tests {
 
     #[test]
     fn complete_registry_candidate_results_have_a_versioned_memory_bound() {
+        let largest_format_registry = StrategyId::ALL
+            .into_iter()
+            .filter(|strategy| strategy.format() == crate::image::ImageFormat::Png)
+            .count();
         assert_eq!(
-            crate::limits::MAX_CANDIDATE_BYTES * StrategyId::ALL.len() as u64,
+            crate::limits::MAX_CANDIDATE_BYTES * largest_format_registry as u64,
             512 * 1024 * 1024
         );
     }
