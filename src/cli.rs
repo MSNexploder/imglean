@@ -30,9 +30,9 @@ Options:\n\
   --version                Print version\n\
 \n\
 Strategy IDs (default order):\n\
-  oxipng-libdeflate-v1, oxipng-zopfli-v1, optipng-v1, pngquant-v1,\n\
-  jpegtran-v1, mozjpeg-v1, jpegli-v1, libwebp-v1, image-webp-v1,\n\
-  avif-aom-v1, avif-rav1e-v1\n\
+  oxipng-libdeflate, oxipng-zopfli, optipng, pngquant,\n\
+  jpegtran, mozjpeg, jpegli, libwebp, image-webp,\n\
+  avif-aom, avif-rav1e\n\
 Supported external providers and overrides:\n\
   optipng, pngquant, jpegtran, mozjpeg, jpegli, libwebp (checked by CLI capability)\n"
 );
@@ -390,14 +390,9 @@ mod tests {
             Ok(Parsed::Print(HELP))
         ));
         assert_eq!(
-            parse_strings(&[
-                "imglean",
-                "--disable-strategy",
-                "oxipng-zopfli-v1",
-                "--help"
-            ])
-            .unwrap_err()
-            .message(),
+            parse_strings(&["imglean", "--disable-strategy", "oxipng-zopfli", "--help"])
+                .unwrap_err()
+                .message(),
             "--help cannot be combined with other arguments"
         );
         assert_eq!(
@@ -579,7 +574,7 @@ mod tests {
             "--output",
             "out",
             "--disable-strategy",
-            "oxipng-zopfli-v1",
+            "oxipng-zopfli",
             "--provider",
             "optipng",
             "/tools/optipng",
@@ -588,8 +583,8 @@ mod tests {
         .unwrap() else {
             panic!("expected runnable arguments");
         };
-        assert_eq!(arguments.strategies.disabled, [StrategyId::OxipngZopfliV1]);
-        assert_eq!(arguments.strategies.required, [StrategyId::OptipngV1]);
+        assert_eq!(arguments.strategies.disabled, [StrategyId::OxipngZopfli]);
+        assert_eq!(arguments.strategies.required, [StrategyId::Optipng]);
         assert_eq!(
             arguments.strategies.provider_paths,
             [ProviderPath {
@@ -619,10 +614,23 @@ mod tests {
                 "imglean",
                 "--output",
                 "out",
-                "--require-strategy",
+                "--disable-strategy",
                 "optipng-v1",
+                "a.png",
+            ])
+            .unwrap_err()
+            .message(),
+            "unknown strategy ID: optipng-v1"
+        );
+        assert_eq!(
+            parse_strings(&[
+                "imglean",
+                "--output",
+                "out",
                 "--require-strategy",
-                "optipng-v1",
+                "optipng",
+                "--require-strategy",
+                "optipng",
                 "a.png",
             ])
             .unwrap_err()
@@ -635,9 +643,9 @@ mod tests {
                 "--output",
                 "out",
                 "--disable-strategy",
-                "optipng-v1",
+                "optipng",
                 "--require-strategy",
-                "optipng-v1",
+                "optipng",
                 "a.png",
             ])
             .unwrap_err()

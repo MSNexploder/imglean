@@ -64,17 +64,17 @@ links, special files, and input aliases are rejected.
 
 The default ordered strategy set is:
 
-1. bundled `oxipng-libdeflate-v1`;
-2. bundled `oxipng-zopfli-v1`;
-3. bundled `optipng-v1` for PNG;
-4. external `pngquant-v1` for PNG at numeric quality;
-5. bundled `jpegtran-v1` for lossless JPEG optimization;
-6. bundled `mozjpeg-v1` for JPEG at numeric quality;
-7. bundled `jpegli-v1` for JPEG at numeric quality;
-8. bundled `libwebp-v1` for lossless or numeric-quality WebP;
-9. bundled `image-webp-v1` for lossless WebP;
-10. bundled `avif-aom-v1` for AVIF at numeric quality; and
-11. bundled `avif-rav1e-v1` for AVIF at numeric quality.
+1. bundled `oxipng-libdeflate`;
+2. bundled `oxipng-zopfli`;
+3. bundled `optipng` for PNG;
+4. external `pngquant` for PNG at numeric quality;
+5. bundled `jpegtran` for lossless JPEG optimization;
+6. bundled `mozjpeg` for JPEG at numeric quality;
+7. bundled `jpegli` for JPEG at numeric quality;
+8. bundled `libwebp` for lossless or numeric-quality WebP;
+9. bundled `image-webp` for lossless WebP;
+10. bundled `avif-aom` for AVIF at numeric quality; and
+11. bundled `avif-rav1e` for AVIF at numeric quality.
 
 `--quality lossless|1..100` selects the fidelity policy and defaults to
 `lossless`. The two OxiPNG strategies, OptiPNG, jpegtran, and image-webp remain
@@ -92,8 +92,8 @@ compatible with the default Apache-2.0 binary. Strategy controls are explicit
 and repeatable:
 
 ```sh
-imglean --disable-strategy oxipng-zopfli-v1 --output ./optimized photo.png
-imglean --require-strategy optipng-v1 --output ./optimized photo.png
+imglean --disable-strategy oxipng-zopfli --output ./optimized photo.png
+imglean --require-strategy optipng --output ./optimized photo.png
 imglean --provider optipng /absolute/path/to/optipng --output ./optimized photo.png
 imglean --quality 80 --output ./optimized photo.png
 imglean --quality 80 --provider pngquant /absolute/path/to/pngquant --output ./optimized photo.png
@@ -173,10 +173,10 @@ run retain explicit rows:
 ```text
 photo.png
      baseline                 109,592 bytes
-     oxipng-libdeflate-v1     109,104 bytes
-  -> oxipng-zopfli-v1         108,928 bytes  winner; saved 664 bytes (0.61%)
-     optipng-v1               109,088 bytes
-     pngquant-v1              not applicable
+     oxipng-libdeflate        109,104 bytes
+  -> oxipng-zopfli            108,928 bytes  winner; saved 664 bytes (0.61%)
+     optipng                  109,088 bytes
+     pngquant                 not applicable
      output                   /path/to/optimized/photo.png
 ```
 

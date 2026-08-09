@@ -1,6 +1,6 @@
 # External pngquant Strategy
 
-`pngquant-v1` supports a separately installed capability-compatible pngquant. It is not
+`pngquant` supports a separately installed capability-compatible pngquant. It is not
 bundled, downloaded, installed, updated, or included in ImgLean's SBOM. The
 strategy participates only when the user selects numeric quality. Discovery
 uses `PATH` or an explicit `--provider pngquant PATH` on every platform.

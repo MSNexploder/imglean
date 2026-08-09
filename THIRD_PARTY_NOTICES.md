@@ -663,8 +663,8 @@ Used by:
 Used by:
 
 - imgref 1.12.2
-- zune-core 0.5.2
-- zune-jpeg 0.5.14
+- zune-core 0.5.3
+- zune-jpeg 0.5.15
 
 ```text
                                  Apache License
@@ -1096,7 +1096,7 @@ Used by:
 - bitflags 2.13.1
 - bitstream-io 4.10.0
 - bumpalo 3.20.3
-- cc 1.4.1
+- cc 1.4.2
 - cfg-if 1.0.4
 - cmake 0.1.58
 - crossbeam-deque 0.8.7
@@ -2540,37 +2540,6 @@ DEALINGS IN THE SOFTWARE.
 
 Used by:
 
-- tap 1.0.1
-
-```text
-MIT License
-
-Copyright (c) 2017 Elliot Linder <darfink@gmail.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-```
-
-## MIT License
-
-Used by:
-
 - built 0.8.1
 
 ```text
@@ -2608,38 +2577,6 @@ Used by:
 MIT License
 
 Copyright (c) 2018 Luca Barbato
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-```
-
-## MIT License
-
-Used by:
-
-- bitvec 1.1.1
-- wyz 0.5.1
-
-```text
-MIT License
-
-Copyright (c) 2018 myrrlyn (Alexander Payne)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -2733,68 +2670,6 @@ Used by:
 MIT License
 
 Copyright (c) 2019 Multimedia and Rust
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-```
-
-## MIT License
-
-Used by:
-
-- radium 0.7.0
-
-```text
-MIT License
-
-Copyright (c) 2019 kneecaw (Nika Layzell)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-```
-
-## MIT License
-
-Used by:
-
-- funty 2.0.0
-
-```text
-MIT License
-
-Copyright (c) 2020 myrrlyn (Alexander Payne)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -3070,7 +2945,7 @@ THE SOFTWARE.
 
 Used by:
 
-- oxipng 10.1.1
+- oxipng 10.2.0
 
 ```text
 The MIT License (MIT)
@@ -3231,7 +3106,7 @@ SOFTWARE.
 
 ## MozJPEG native code from mozjpeg-sys 2.2.3
 
-Used by bundled mozjpeg-v1 and jpegtran-v1.
+Used by bundled mozjpeg and jpegtran.
 
 ```text
 The Independent JPEG Group's JPEG software
@@ -3281,7 +3156,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 ## Jpegli native code from jpegli-sys 0.1.0+0.10.2
 
-Used by bundled jpegli-v1.
+Used by bundled jpegli.
 
 ```text
 Copyright (c) the JPEG XL Project Authors.
@@ -3552,7 +3427,7 @@ Statically linked by jpegli-sys.
 
 ## libwebp 1.6.0 native code from libwebp-sys 0.14.4 (BSD-3-Clause)
 
-Used by bundled libwebp-v1.
+Used by bundled libwebp.
 
 ```text
 Copyright (c) 2010, Google Inc. All rights reserved.
@@ -3732,7 +3607,7 @@ Alliance for Open Media Patent License 1.0
 
 ## OptiPNG 7.9.1 PNG optimization engine (Zlib)
 
-Used by bundled optipng-v1.
+Used by bundled optipng.
 
 ```text
 Copyright (C) 2001-2025 Cosmin Truta and the Contributing Authors.
@@ -3760,7 +3635,7 @@ freely, subject to the following restrictions:
 
 ## Cexcept used by OptiPNG (Zlib)
 
-Used by bundled optipng-v1.
+Used by bundled optipng.
 
 ```text
 ## Copyright Notice, Disclaimer and License

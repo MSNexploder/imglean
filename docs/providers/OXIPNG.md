@@ -1,6 +1,6 @@
 # Bundled OxiPNG Strategies
 
-The controller's format validator decides candidate acceptance. OxiPNG 10.1.1
+The controller's format validator decides candidate acceptance. OxiPNG 10.2.0
 runs only inside the private worker role, with default features disabled except
 the explicitly enabled Zopfli backend.
 
@@ -24,8 +24,8 @@ timeout: effective strategy timeout minus 5 seconds, minimum 1 (default: 55 seco
 max_decompressed_size: 256 MiB
 ```
 
-`oxipng-libdeflate-v1` uses libdeflater compression level 11.
-`oxipng-zopfli-v1` uses 15 iterations, unlimited iterations without improvement,
+`oxipng-libdeflate` uses libdeflater compression level 11.
+`oxipng-zopfli` uses 15 iterations, unlimited iterations without improvement,
 and at most 15 block splits. Both are enabled by default and preserve interlace,
 representation, alpha values, and ancillary data according to this pinned
 configuration. Error repair remains disabled. Metadata stripping is disabled

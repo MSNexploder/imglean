@@ -1,6 +1,6 @@
 # Bundled libwebp Strategy
 
-`libwebp-v1` is enabled for WebP at lossless and numeric quality. The bundled
+`libwebp` is enabled for WebP at lossless and numeric quality. The bundled
 strategy uses libwebp 1.6.0's advanced API with method 6, alpha quality 100,
 one thread, and exact transparent RGB. Lossless quality selects lossless preset
 9; numeric quality passes native `Q` and permits lossy color coding.

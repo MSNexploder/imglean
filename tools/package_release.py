@@ -231,13 +231,13 @@ def release_manifest(
         },
         "representative_external_overrides": [
             {
-                "strategies": ["optipng-v1"],
+                "strategies": ["optipng"],
                 "implementation": "OptiPNG",
                 "revision": (ROOT / "ci/optipng-version.txt").read_text().strip(),
             },
             *[
                 {
-                    "strategies": ["pngquant-v1"],
+                    "strategies": ["pngquant"],
                     "implementation": "pngquant",
                     "revision": revision,
                 }
@@ -245,43 +245,43 @@ def release_manifest(
                 if revision
             ],
             {
-                "strategies": ["jpegtran-v1", "mozjpeg-v1"],
+                "strategies": ["jpegtran", "mozjpeg"],
                 "implementation": "MozJPEG",
                 "revision": (ROOT / "ci/mozjpeg-revision.txt").read_text().strip(),
             },
             {
-                "strategies": ["jpegtran-v1"],
+                "strategies": ["jpegtran"],
                 "implementation": "libjpeg-turbo",
                 "revision": (ROOT / "ci/libjpeg-turbo-revision.txt").read_text().strip(),
             },
             {
-                "strategies": ["jpegli-v1"],
+                "strategies": ["jpegli"],
                 "implementation": "Jpegli",
                 "revision": (ROOT / "ci/jpegli-revision.txt").read_text().strip(),
             },
             {
-                "strategies": ["libwebp-v1"],
+                "strategies": ["libwebp"],
                 "implementation": "libwebp cwebp",
                 "revision": (ROOT / "ci/libwebp-version.txt").read_text().strip(),
             },
         ],
         "strategy_registry": [
             {
-                "id": "oxipng-libdeflate-v1",
+                "id": "oxipng-libdeflate",
                 "execution": "bundled",
                 "format": "PNG",
-                "settings": "OxiPNG 10.1.1, pinned filters, libdeflater level 11",
+                "settings": "OxiPNG 10.2.0, pinned filters, libdeflater level 11",
                 "metadata": "preserve by default; OxiPNG Safe with --strip-metadata",
             },
             {
-                "id": "oxipng-zopfli-v1",
+                "id": "oxipng-zopfli",
                 "execution": "bundled",
                 "format": "PNG",
-                "settings": "OxiPNG 10.1.1, pinned filters, Zopfli 15 iterations",
+                "settings": "OxiPNG 10.2.0, pinned filters, Zopfli 15 iterations",
                 "metadata": "preserve by default; OxiPNG Safe with --strip-metadata",
             },
             {
-                "id": "optipng-v1",
+                "id": "optipng",
                 "execution": "bundled-with-external-override",
                 "provider": "optipng",
                 "format": "PNG",
@@ -300,7 +300,7 @@ def release_manifest(
                 ],
             },
             {
-                "id": "pngquant-v1",
+                "id": "pngquant",
                 "execution": "external-optional",
                 "provider": "pngquant",
                 "format": "PNG",
@@ -321,7 +321,7 @@ def release_manifest(
                 "metadata": "always requests provider-native --strip",
             },
             {
-                "id": "jpegtran-v1",
+                "id": "jpegtran",
                 "execution": "bundled-with-external-override",
                 "provider": "jpegtran",
                 "format": "JPEG",
@@ -350,7 +350,7 @@ def release_manifest(
                 ],
             },
             {
-                "id": "mozjpeg-v1",
+                "id": "mozjpeg",
                 "execution": "bundled-with-external-override",
                 "provider": "mozjpeg",
                 "format": "JPEG",
@@ -370,7 +370,7 @@ def release_manifest(
                 "metadata": "bundled implementation preserves opaque markers and handles structural JFIF/Adobe markers without duplicates or blind replay; --strip-metadata omits saved markers; external override uses its native CLI behavior",
             },
             {
-                "id": "jpegli-v1",
+                "id": "jpegli",
                 "execution": "bundled-with-external-override",
                 "provider": "jpegli",
                 "format": "JPEG",
@@ -388,7 +388,7 @@ def release_manifest(
                 "metadata": "bundled implementation preserves opaque markers and handles structural JFIF/Adobe markers without duplicates or blind replay; --strip-metadata omits saved markers; external override uses its native CLI behavior",
             },
             {
-                "id": "libwebp-v1",
+                "id": "libwebp",
                 "execution": "bundled-with-external-override",
                 "provider": "libwebp",
                 "format": "WebP",
@@ -398,7 +398,7 @@ def release_manifest(
                 "metadata": "preserves ICC and Exif by default; --strip-metadata omits both",
             },
             {
-                "id": "image-webp-v1",
+                "id": "image-webp",
                 "execution": "bundled",
                 "format": "WebP",
                 "settings": "image-webp 0.2.4 lossless encoder",
@@ -406,7 +406,7 @@ def release_manifest(
                 "metadata": "preserves ICC and Exif by default; --strip-metadata omits both",
             },
             {
-                "id": "avif-aom-v1",
+                "id": "avif-aom",
                 "execution": "bundled",
                 "format": "AVIF",
                 "settings": "libavif with libaom, native quality Q, alpha quality 100, speed 6, one thread",
@@ -414,7 +414,7 @@ def release_manifest(
                 "metadata": "selected API exposes no metadata-removal control; normal output under either policy",
             },
             {
-                "id": "avif-rav1e-v1",
+                "id": "avif-rav1e",
                 "execution": "bundled",
                 "format": "AVIF",
                 "settings": "ravif/rav1e native quality Q, alpha quality 100, speed 6, 8-bit, one thread",
@@ -425,12 +425,12 @@ def release_manifest(
         "quality_policy": {
             "accepted": "lossless or an integer from 1 through 100",
             "default": "lossless",
-            "numeric_mapping": "provider-native and strategy-versioned",
+            "numeric_mapping": "provider-native and pinned per strategy",
             "candidate_trust": "format-specific basic candidate gate plus pinned adapter settings",
         },
         "metadata_policy": {
             "control": "--strip-metadata",
-            "mapping": "provider-native and strategy-versioned",
+            "mapping": "provider-native and pinned per strategy",
             "guarantee": "best effort; unchanged baseline remains eligible",
             "controller_transform": False,
             "controller_verification": False,

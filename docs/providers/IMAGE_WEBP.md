@@ -1,6 +1,6 @@
 # Bundled image-webp Strategy
 
-`image-webp-v1` uses image-webp 0.2.4's safe-Rust lossless encoder. It remains
+`image-webp` uses image-webp 0.2.4's safe-Rust lossless encoder. It remains
 eligible at numeric quality as an additional lossless candidate and does not
 consume the numeric value. ICC and Exif are preserved by default and omitted
 when `--strip-metadata` is requested. image-webp has no lossy encoder and no

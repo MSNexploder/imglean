@@ -66,9 +66,9 @@ def main() -> int:
             raise SystemExit("jpegtran did not preserve the source Exif marker")
         if source.read_bytes() != original or sorted(output.iterdir()) != [candidate]:
             raise SystemExit("jpegtran changed the source or created extra output")
-        if "-> jpegtran-v1" not in completed.stdout:
+        if "-> jpegtran" not in completed.stdout:
             raise SystemExit("jpegtran winner diagnostics are missing")
-        if "using jpegtran-v1 provider at" not in completed.stderr:
+        if "using jpegtran provider at" not in completed.stderr:
             raise SystemExit("jpegtran capability discovery diagnostics are missing")
 
         stripped_source = directory / "stripped.jpg"
@@ -102,7 +102,7 @@ def main() -> int:
             raise SystemExit("jpegtran did not strip the source Exif marker")
         if stripped_source.read_bytes() != original:
             raise SystemExit("jpegtran metadata stripping changed the source")
-        if "-> jpegtran-v1" not in stripped.stdout:
+        if "-> jpegtran" not in stripped.stdout:
             raise SystemExit("jpegtran metadata-stripping winner diagnostics are missing")
     return 0
 

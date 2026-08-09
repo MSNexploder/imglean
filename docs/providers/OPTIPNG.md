@@ -1,6 +1,6 @@
 # Bundled OptiPNG Strategy
 
-`optipng-v1` bundles the OptiPNG 7.9.1 optimization engine and is enabled by
+`optipng` bundles the OptiPNG 7.9.1 optimization engine and is enabled by
 default for PNG input. The native source is pinned in `imglean-codecs`, limited
 to the PNG read path required by ImgLean, and linked with a pinned bundled
 libpng/zlib. It runs only inside the short-lived provider worker.

@@ -62,12 +62,7 @@ fn check_succeeds_when_no_enabled_strategy_can_reduce_the_input() {
     fs::write(&source, compressible_png()).unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_imglean"));
     command.arg("--check");
-    for strategy in [
-        "oxipng-libdeflate-v1",
-        "oxipng-zopfli-v1",
-        "optipng-v1",
-        "pngquant-v1",
-    ] {
+    for strategy in ["oxipng-libdeflate", "oxipng-zopfli", "optipng", "pngquant"] {
         command.arg("--disable-strategy").arg(strategy);
     }
     let result = command.arg(&source).output().unwrap();
@@ -100,7 +95,7 @@ fn bundled_jpeg_strategies_run_through_the_controller() {
 
     assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
     let report = stdout(&result);
-    for strategy in ["jpegtran-v1", "mozjpeg-v1", "jpegli-v1"] {
+    for strategy in ["jpegtran", "mozjpeg", "jpegli"] {
         assert!(
             report.lines().any(|line| {
                 line.contains(strategy) && line.contains(" bytes") && !line.contains("warning:")
@@ -117,12 +112,12 @@ fn bundled_webp_and_avif_strategies_run_through_the_controller() {
         (
             "photo.webp",
             include_bytes!("corpus/webp/v1/accepted/provider-reduction.webp").as_slice(),
-            ["libwebp-v1", "image-webp-v1"],
+            ["libwebp", "image-webp"],
         ),
         (
             "photo.avif",
             include_bytes!("corpus/avif/v1/accepted/provider-reduction.avif").as_slice(),
-            ["avif-aom-v1", "avif-rav1e-v1"],
+            ["avif-aom", "avif-rav1e"],
         ),
     ] {
         let directory = TestDirectory::new();
@@ -162,9 +157,9 @@ fn metadata_stripping_is_delegated_to_the_winning_strategy() {
     let result = Command::new(env!("CARGO_BIN_EXE_imglean"))
         .arg("--strip-metadata")
         .arg("--disable-strategy")
-        .arg("oxipng-zopfli-v1")
+        .arg("oxipng-zopfli")
         .arg("--disable-strategy")
-        .arg("optipng-v1")
+        .arg("optipng")
         .arg("--output")
         .arg(&output_directory)
         .arg(&source)
@@ -174,7 +169,7 @@ fn metadata_stripping_is_delegated_to_the_winning_strategy() {
     assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
     let candidate = fs::read(output_directory.join("metadata.png")).unwrap();
     assert!(!candidate.windows(4).any(|bytes| bytes == b"tEXt"));
-    assert!(stdout(&result).contains("-> oxipng-libdeflate-v1"));
+    assert!(stdout(&result).contains("-> oxipng-libdeflate"));
     assert_eq!(fs::read(source).unwrap(), source_bytes);
 }
 
@@ -189,11 +184,11 @@ fn metadata_stripping_request_does_not_transform_the_baseline() {
     let result = Command::new(env!("CARGO_BIN_EXE_imglean"))
         .arg("--strip-metadata")
         .arg("--disable-strategy")
-        .arg("oxipng-libdeflate-v1")
+        .arg("oxipng-libdeflate")
         .arg("--disable-strategy")
-        .arg("oxipng-zopfli-v1")
+        .arg("oxipng-zopfli")
         .arg("--disable-strategy")
-        .arg("optipng-v1")
+        .arg("optipng")
         .arg("--output")
         .arg(&output_directory)
         .arg(&source)
@@ -219,7 +214,7 @@ fn jpeg_baseline_uses_format_specific_registry_and_replaces_output() {
 
     let result = Command::new(env!("CARGO_BIN_EXE_imglean"))
         .arg("--disable-strategy")
-        .arg("jpegtran-v1")
+        .arg("jpegtran")
         .arg("--output")
         .arg(&output_directory)
         .arg(&source)
@@ -233,21 +228,16 @@ fn jpeg_baseline_uses_format_specific_registry_and_replaces_output() {
     assert_eq!(fs::read(&source).unwrap(), source_bytes);
     let report = stdout(&result);
     assert!(report.contains("-> baseline"));
-    for strategy in ["jpegtran-v1", "mozjpeg-v1", "jpegli-v1"] {
+    for strategy in ["jpegtran", "mozjpeg", "jpegli"] {
         assert!(report.contains(strategy), "missing registry row {strategy}");
     }
-    for strategy in [
-        "oxipng-libdeflate-v1",
-        "oxipng-zopfli-v1",
-        "optipng-v1",
-        "pngquant-v1",
-    ] {
+    for strategy in ["oxipng-libdeflate", "oxipng-zopfli", "optipng", "pngquant"] {
         assert!(
             !report.contains(strategy),
             "unexpected registry row {strategy}"
         );
     }
-    for strategy in ["mozjpeg-v1", "jpegli-v1"] {
+    for strategy in ["mozjpeg", "jpegli"] {
         assert!(
             report
                 .lines()
@@ -257,7 +247,7 @@ fn jpeg_baseline_uses_format_specific_registry_and_replaces_output() {
     assert!(
         report
             .lines()
-            .any(|line| line.contains("jpegtran-v1") && line.contains("disabled"))
+            .any(|line| line.contains("jpegtran") && line.contains("disabled"))
     );
 }
 
@@ -279,7 +269,7 @@ fn invalid_source_does_not_prevent_a_later_valid_input() {
     );
     assert!(output_directory.join("good.png").exists());
     assert!(stdout(&result).contains("bad.png\n"));
-    assert!(stdout(&result).contains("oxipng-libdeflate-v1     not run"));
+    assert!(stdout(&result).contains("oxipng-libdeflate        not run"));
     assert!(stdout(&result).contains("  !! failed"));
     assert!(stdout(&result).contains("good.png\n"));
     assert!(stderr(&result).contains("Summary: 1 succeeded, 1 failed"));

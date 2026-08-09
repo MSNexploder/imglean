@@ -16,7 +16,7 @@ ancillary identity, or perceptual quality. The two lossless strategies are
 configured to preserve samples, including RGB beneath full transparency;
 numeric libwebp intentionally permits fidelity reduction.
 
-`libwebp-v1` and `image-webp-v1` preserve ICC and Exif by default and omit them
+`libwebp` and `image-webp` preserve ICC and Exif by default and omit them
 when `--strip-metadata` is requested. The controller does not independently
 verify their removal, and the unchanged baseline remains eligible.
 

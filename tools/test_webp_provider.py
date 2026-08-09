@@ -35,7 +35,7 @@ def main() -> int:
                 "libwebp",
                 args.provider.resolve(),
                 "--disable-strategy",
-                "image-webp-v1",
+                "image-webp",
                 "--strip-metadata",
                 "--output",
                 output,
@@ -59,9 +59,9 @@ def main() -> int:
             raise SystemExit("libwebp did not strip WebP Exif when requested")
         if source.read_bytes() != original or sorted(output.iterdir()) != [candidate]:
             raise SystemExit("libwebp integration changed the source or created extra output")
-        if "-> libwebp-v1" not in completed.stdout:
+        if "-> libwebp" not in completed.stdout:
             raise SystemExit("libwebp winner diagnostics are missing")
-        if "using libwebp-v1 provider at" not in completed.stderr:
+        if "using libwebp provider at" not in completed.stderr:
             raise SystemExit("libwebp capability discovery diagnostics are missing")
     return 0
 

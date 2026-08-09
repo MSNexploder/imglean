@@ -39,13 +39,13 @@ def main() -> int:
             Path(mozjpeg["manifest_path"]).parent / "LICENSE",
             ROOT / "licenses" / "mozjpeg-LICENSE",
             f"MozJPEG native code from mozjpeg-sys {mozjpeg['version']}",
-            "Used by bundled mozjpeg-v1 and jpegtran-v1.",
+            "Used by bundled mozjpeg and jpegtran.",
         ),
         (
             Path(jpegli["manifest_path"]).parent / "libjxl" / "LICENSE",
             ROOT / "licenses" / "jpegli-LICENSE",
             f"Jpegli native code from jpegli-sys {jpegli['version']}",
-            "Used by bundled jpegli-v1.",
+            "Used by bundled jpegli.",
         ),
         (
             Path(jpegli["manifest_path"]).parent / "libjxl" / "PATENTS",
@@ -67,7 +67,7 @@ def main() -> int:
             Path(libwebp["manifest_path"]).parent / "vendor" / "COPYING",
             ROOT / "licenses" / "libwebp-COPYING",
             f"libwebp {LIBWEBP_VERSION} native code from libwebp-sys {libwebp['version']} (BSD-3-Clause)",
-            "Used by bundled libwebp-v1.",
+            "Used by bundled libwebp.",
         ),
         (
             Path(libwebp["manifest_path"]).parent / "vendor" / "PATENTS",
@@ -85,7 +85,7 @@ def main() -> int:
             ROOT / "crates" / "imglean-codecs" / "vendor" / "optipng" / "LICENSE.txt",
             ROOT / "licenses" / "optipng-LICENSE",
             "OptiPNG 7.9.1 PNG optimization engine (Zlib)",
-            "Used by bundled optipng-v1.",
+            "Used by bundled optipng.",
         ),
         (
             ROOT
@@ -98,7 +98,7 @@ def main() -> int:
             / "LICENSE.md",
             ROOT / "licenses" / "cexcept-LICENSE",
             "Cexcept used by OptiPNG (Zlib)",
-            "Used by bundled optipng-v1.",
+            "Used by bundled optipng.",
         ),
     ]
     for vendored, checked, _, _ in native_notices:

@@ -1,6 +1,6 @@
 # Bundled jpegtran Strategy
 
-`jpegtran-v1` is enabled by default for JPEG input at lossless and numeric
+`jpegtran` is enabled by default for JPEG input at lossless and numeric
 quality. It uses the coefficient-transcoding API bundled by `mozjpeg-sys`: the
 source coefficients are copied without pixel decoding or requantization,
 Huffman coding is optimized, and progressive scans are written. This preserves

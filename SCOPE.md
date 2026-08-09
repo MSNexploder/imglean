@@ -23,7 +23,7 @@ licensed. This document is the authoritative product boundary.
 - **Acceptance policy:** output requirements applied to every candidate for one input
 - **Baseline:** the validated source capture offered unchanged
 - **Provider:** an optimizer implementation, such as OxiPNG
-- **Strategy:** one provider with a versioned explicit option set
+- **Strategy:** one provider with an explicit, pinned option set
 - **Candidate:** the baseline or a strategy result
 - **Winner:** the first smallest accepted candidate in registry order
 
@@ -37,8 +37,8 @@ licensed. This document is the authoritative product boundary.
   output entry and never an input alias.
 - Report every input outcome and the invocation outcome.
 - Enable compatible bundled strategies by default.
-- Keep strategy identifiers, order, provider capabilities, options, and limits
-  explicit, versioned, tested, and recorded in release artifacts.
+- Keep strategy identifiers and order stable; keep provider capabilities,
+  options, and limits explicit, pinned, tested, and recorded in release artifacts.
 - Keep the bundled workflow offline and permissively redistributable.
 - Require deliberate numeric quality selection before enabling a
   fidelity-reducing strategy.
@@ -77,8 +77,8 @@ strategy configuration.
 
 The ordered, format-specific registry is:
 
-1. OxiPNG 10.1.1 with libdeflater level 11, bundled;
-2. OxiPNG 10.1.1 with pinned Zopfli settings, bundled;
+1. OxiPNG 10.2.0 with libdeflater level 11, bundled;
+2. OxiPNG 10.2.0 with pinned Zopfli settings, bundled;
 3. OptiPNG at optimization level 2, bundled;
 4. pngquant at numeric quality, external and optional;
 5. jpegtran with configurable native marker copying, Huffman optimization, and
@@ -91,8 +91,8 @@ The ordered, format-specific registry is:
 11. ravif/rav1e at numeric quality, bundled.
 
 `--quality lossless|1..100` defaults to `lossless`. jpegtran and the PNG
-lossless strategies remain applicable at numeric quality. `pngquant-v1`,
-`mozjpeg-v1`, `jpegli-v1`, `avif-aom-v1`, and `avif-rav1e-v1` are not
+lossless strategies remain applicable at numeric quality. `pngquant`,
+`mozjpeg`, `jpegli`, `avif-aom`, and `avif-rav1e` are not
 applicable at lossless quality. Numeric `Q` maps to each provider's native
 quality control; pngquant receives `0-Q`, while MozJPEG and Jpegli receive `Q`.
 ImgLean does not emulate lossy transformations or independently score quality.

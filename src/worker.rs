@@ -121,7 +121,7 @@ pub fn run_strategy(
         StrategyResult::Warning("worker timeout exceeded".to_owned())
     } else if output.stderr.truncated || output.stdout.truncated {
         StrategyResult::Warning("worker diagnostics exceeded the byte limit".to_owned())
-    } else if strategy.id == StrategyId::PngquantV1
+    } else if strategy.id == StrategyId::Pngquant
         && output
             .status
             .is_some_and(|status| status.code() == Some(99))
@@ -190,7 +190,7 @@ fn strategy_command(
                 .arg(candidate_name);
             Ok(command)
         }
-        Execution::External { executable, .. } if strategy.id == StrategyId::OptipngV1 => {
+        Execution::External { executable, .. } if strategy.id == StrategyId::Optipng => {
             let mut command = Command::new(executable);
             command.arg("-quiet").arg("-o2");
             if strip_metadata {
@@ -203,7 +203,7 @@ fn strategy_command(
                 .arg(private_input);
             Ok(command)
         }
-        Execution::External { executable, .. } if strategy.id == StrategyId::PngquantV1 => {
+        Execution::External { executable, .. } if strategy.id == StrategyId::Pngquant => {
             let Some(quality) = quality.numeric() else {
                 return Err("pngquant requires numeric quality");
             };
@@ -221,7 +221,7 @@ fn strategy_command(
                 .arg(private_input);
             Ok(command)
         }
-        Execution::External { executable, .. } if strategy.id == StrategyId::JpegtranV1 => {
+        Execution::External { executable, .. } if strategy.id == StrategyId::Jpegtran => {
             let mut command = Command::new(executable);
             command
                 .arg("-copy")
@@ -234,7 +234,7 @@ fn strategy_command(
                 .arg(private_input);
             Ok(command)
         }
-        Execution::External { executable, .. } if strategy.id == StrategyId::MozjpegV1 => {
+        Execution::External { executable, .. } if strategy.id == StrategyId::Mozjpeg => {
             let Some(quality) = quality.numeric() else {
                 return Err("MozJPEG requires numeric quality");
             };
@@ -250,7 +250,7 @@ fn strategy_command(
                 .arg(private_input);
             Ok(command)
         }
-        Execution::External { executable, .. } if strategy.id == StrategyId::JpegliV1 => {
+        Execution::External { executable, .. } if strategy.id == StrategyId::Jpegli => {
             let Some(quality) = quality.numeric() else {
                 return Err("Jpegli requires numeric quality");
             };
@@ -264,7 +264,7 @@ fn strategy_command(
                 .arg(candidate_path);
             Ok(command)
         }
-        Execution::External { executable, .. } if strategy.id == StrategyId::LibwebpV1 => {
+        Execution::External { executable, .. } if strategy.id == StrategyId::Libwebp => {
             let mut command = Command::new(executable);
             command.arg("-quiet");
             match quality {
@@ -342,14 +342,14 @@ fn run_private(arguments: &[OsString]) -> i32 {
     if !source_is_valid {
         return private_error("private provider input failed format validation");
     }
-    if strategy == StrategyId::OptipngV1 {
+    if strategy == StrategyId::Optipng {
         return match imglean_codecs::optimize_optipng(input, candidate, strip_metadata) {
             Ok(()) => 0,
             Err(()) => private_error("OptiPNG could not optimize the private input"),
         };
     }
     let optimized = match strategy {
-        StrategyId::OxipngLibdeflateV1 | StrategyId::OxipngZopfliV1 => {
+        StrategyId::OxipngLibdeflate | StrategyId::OxipngZopfli => {
             let options = oxipng_options(
                 strategy,
                 Duration::from_secs(timeout_seconds),
@@ -360,11 +360,11 @@ fn run_private(arguments: &[OsString]) -> i32 {
                 Err(_) => return private_error("OxiPNG could not optimize the private input"),
             }
         }
-        StrategyId::JpegtranV1 => match imglean_codecs::optimize_jpegtran(&bytes, strip_metadata) {
+        StrategyId::Jpegtran => match imglean_codecs::optimize_jpegtran(&bytes, strip_metadata) {
             Ok(bytes) => bytes,
             Err(()) => return private_error("jpegtran could not optimize the private input"),
         },
-        StrategyId::MozjpegV1 => {
+        StrategyId::Mozjpeg => {
             let Some(quality) = quality.numeric() else {
                 return private_error("MozJPEG requires numeric quality");
             };
@@ -373,7 +373,7 @@ fn run_private(arguments: &[OsString]) -> i32 {
                 Err(()) => return private_error("MozJPEG could not optimize the private input"),
             }
         }
-        StrategyId::JpegliV1 => {
+        StrategyId::Jpegli => {
             let Some(quality) = quality.numeric() else {
                 return private_error("Jpegli requires numeric quality");
             };
@@ -382,19 +382,19 @@ fn run_private(arguments: &[OsString]) -> i32 {
                 Err(()) => return private_error("Jpegli could not optimize the private input"),
             }
         }
-        StrategyId::LibwebpV1 => {
+        StrategyId::Libwebp => {
             match imglean_codecs::optimize_libwebp(&bytes, quality.numeric(), strip_metadata) {
                 Ok(bytes) => bytes,
                 Err(()) => return private_error("libwebp could not optimize the private input"),
             }
         }
-        StrategyId::ImageWebpV1 => {
+        StrategyId::ImageWebp => {
             match imglean_codecs::optimize_image_webp(&bytes, strip_metadata) {
                 Ok(bytes) => bytes,
                 Err(()) => return private_error("image-webp could not optimize the private input"),
             }
         }
-        StrategyId::AvifAomV1 => {
+        StrategyId::AvifAom => {
             let Some(quality) = quality.numeric() else {
                 return private_error("libavif/libaom requires numeric quality");
             };
@@ -405,7 +405,7 @@ fn run_private(arguments: &[OsString]) -> i32 {
                 }
             }
         }
-        StrategyId::AvifRav1eV1 => {
+        StrategyId::AvifRav1e => {
             let Some(quality) = quality.numeric() else {
                 return private_error("ravif requires numeric quality");
             };
@@ -414,7 +414,7 @@ fn run_private(arguments: &[OsString]) -> i32 {
                 Err(()) => return private_error("ravif could not optimize the private input"),
             }
         }
-        StrategyId::OptipngV1 | StrategyId::PngquantV1 => {
+        StrategyId::Optipng | StrategyId::Pngquant => {
             unreachable!("handled or external strategy")
         }
     };
@@ -441,21 +441,21 @@ fn run_private(arguments: &[OsString]) -> i32 {
 
 fn oxipng_options(strategy: StrategyId, timeout: Duration, strip_metadata: bool) -> Options {
     let deflater = match strategy {
-        StrategyId::OxipngLibdeflateV1 => Deflater::Libdeflater { compression: 11 },
-        StrategyId::OxipngZopfliV1 => Deflater::Zopfli(ZopfliOptions {
+        StrategyId::OxipngLibdeflate => Deflater::Libdeflater { compression: 11 },
+        StrategyId::OxipngZopfli => Deflater::Zopfli(ZopfliOptions {
             iteration_count: NonZeroU64::new(15).expect("15 is nonzero"),
             iterations_without_improvement: NonZeroU64::new(u64::MAX).expect("u64::MAX is nonzero"),
             maximum_block_splits: 15,
         }),
-        StrategyId::OptipngV1
-        | StrategyId::PngquantV1
-        | StrategyId::JpegtranV1
-        | StrategyId::MozjpegV1
-        | StrategyId::JpegliV1
-        | StrategyId::LibwebpV1
-        | StrategyId::ImageWebpV1
-        | StrategyId::AvifAomV1
-        | StrategyId::AvifRav1eV1 => {
+        StrategyId::Optipng
+        | StrategyId::Pngquant
+        | StrategyId::Jpegtran
+        | StrategyId::Mozjpeg
+        | StrategyId::Jpegli
+        | StrategyId::Libwebp
+        | StrategyId::ImageWebp
+        | StrategyId::AvifAom
+        | StrategyId::AvifRav1e => {
             unreachable!("other strategies do not use OxiPNG options")
         }
     };
@@ -586,7 +586,7 @@ mod tests {
     #[test]
     fn options_pin_every_policy_boundary() {
         let timeout = DEFAULT_STRATEGY_TIMEOUT.saturating_sub(OXIPNG_CLEANUP_RESERVE);
-        let options = oxipng_options(StrategyId::OxipngLibdeflateV1, timeout, false);
+        let options = oxipng_options(StrategyId::OxipngLibdeflate, timeout, false);
         assert!(!options.fix_errors);
         assert!(options.force);
         assert_eq!(
@@ -612,10 +612,10 @@ mod tests {
         assert_eq!(options.max_decompressed_size, Some(MAX_RECONSTRUCTED_BYTES));
         assert_eq!(options.deflater, Deflater::Libdeflater { compression: 11 });
 
-        let stripped = oxipng_options(StrategyId::OxipngLibdeflateV1, timeout, true);
+        let stripped = oxipng_options(StrategyId::OxipngLibdeflate, timeout, true);
         assert_eq!(stripped.strip, StripChunks::Safe);
 
-        let zopfli = oxipng_options(StrategyId::OxipngZopfliV1, timeout, false);
+        let zopfli = oxipng_options(StrategyId::OxipngZopfli, timeout, false);
         assert_eq!(
             zopfli.deflater,
             Deflater::Zopfli(ZopfliOptions {
@@ -728,9 +728,9 @@ mod tests {
         let directory = test_directory();
         let source = jpeg_with_exif();
         for strategy in [
-            StrategyId::JpegtranV1,
-            StrategyId::MozjpegV1,
-            StrategyId::JpegliV1,
+            StrategyId::Jpegtran,
+            StrategyId::Mozjpeg,
+            StrategyId::Jpegli,
         ] {
             for (policy, should_preserve) in [("preserve", true), ("strip", false)] {
                 let input = directory.join(format!("{}-{policy}-input.jpg", strategy.as_str()));
@@ -760,7 +760,7 @@ mod tests {
                         .any(|bytes| bytes == b"imglean-app15"),
                     should_preserve
                 );
-                if should_preserve && strategy != StrategyId::JpegtranV1 {
+                if should_preserve && strategy != StrategyId::Jpegtran {
                     assert_eq!(
                         candidate
                             .windows(b"JFIF\0".len())
@@ -787,7 +787,7 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let directory = test_directory();
         let source = include_bytes!("../tests/corpus/webp/v1/accepted/metadata.webp");
-        for strategy in [StrategyId::LibwebpV1, StrategyId::ImageWebpV1] {
+        for strategy in [StrategyId::Libwebp, StrategyId::ImageWebp] {
             for (policy, should_preserve) in [("preserve", true), ("strip", false)] {
                 let input = directory.join(format!("{}-{policy}-input.webp", strategy.as_str()));
                 let candidate =
@@ -821,7 +821,7 @@ mod tests {
     #[test]
     fn bundled_worker_receives_the_strategy_timeout_minus_cleanup_reserve() {
         let strategy = Strategy {
-            id: StrategyId::OxipngLibdeflateV1,
+            id: StrategyId::OxipngLibdeflate,
             execution: Execution::Bundled,
         };
         let command = strategy_command(
@@ -837,7 +837,7 @@ mod tests {
             command.get_args().collect::<Vec<_>>(),
             [
                 OsStr::new(WORKER_ROLE),
-                OsStr::new("oxipng-libdeflate-v1"),
+                OsStr::new("oxipng-libdeflate"),
                 OsStr::new(LIMITS_VERSION),
                 OsStr::new("85"),
                 OsStr::new("strip"),
@@ -931,7 +931,7 @@ mod tests {
     #[test]
     fn jpeg_commands_map_common_quality_and_pin_adapter_arguments() {
         let jpegtran = Strategy {
-            id: StrategyId::JpegtranV1,
+            id: StrategyId::Jpegtran,
             execution: Execution::External {
                 executable: PathBuf::from("jpegtran"),
             },
@@ -971,7 +971,7 @@ mod tests {
         assert_eq!(command.get_args().nth(1), Some(OsStr::new("none")));
 
         let mozjpeg = Strategy {
-            id: StrategyId::MozjpegV1,
+            id: StrategyId::Mozjpeg,
             execution: Execution::External {
                 executable: PathBuf::from("mozjpeg"),
             },
@@ -1000,7 +1000,7 @@ mod tests {
         );
 
         let jpegli = Strategy {
-            id: StrategyId::JpegliV1,
+            id: StrategyId::Jpegli,
             execution: Execution::External {
                 executable: PathBuf::from("jpegli"),
             },
@@ -1030,7 +1030,7 @@ mod tests {
     #[test]
     fn libwebp_command_maps_quality_metadata_and_exact_lossless_settings() {
         let strategy = Strategy {
-            id: StrategyId::LibwebpV1,
+            id: StrategyId::Libwebp,
             execution: Execution::External {
                 executable: PathBuf::from("cwebp"),
             },
@@ -1292,14 +1292,14 @@ mod tests {
 
     fn external_strategy(executable: PathBuf) -> Strategy {
         Strategy {
-            id: StrategyId::OptipngV1,
+            id: StrategyId::Optipng,
             execution: Execution::External { executable },
         }
     }
 
     fn pngquant_strategy(executable: PathBuf) -> Strategy {
         Strategy {
-            id: StrategyId::PngquantV1,
+            id: StrategyId::Pngquant,
             execution: Execution::External { executable },
         }
     }

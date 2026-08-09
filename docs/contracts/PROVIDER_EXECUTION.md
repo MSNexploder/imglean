@@ -4,17 +4,17 @@
 
 The source baseline precedes this stable order:
 
-1. `oxipng-libdeflate-v1` (PNG, bundled, lossless)
-2. `oxipng-zopfli-v1` (PNG, bundled, lossless)
-3. `optipng-v1` (PNG, bundled, lossless)
-4. `pngquant-v1` (PNG, external, numeric quality)
-5. `jpegtran-v1` (JPEG, bundled, lossless)
-6. `mozjpeg-v1` (JPEG, bundled, numeric quality)
-7. `jpegli-v1` (JPEG, bundled, numeric quality)
-8. `libwebp-v1` (WebP, bundled with `cwebp` override, lossless or numeric quality)
-9. `image-webp-v1` (WebP, bundled, lossless)
-10. `avif-aom-v1` (AVIF, bundled, numeric quality)
-11. `avif-rav1e-v1` (AVIF, bundled, numeric quality)
+1. `oxipng-libdeflate` (PNG, bundled, lossless)
+2. `oxipng-zopfli` (PNG, bundled, lossless)
+3. `optipng` (PNG, bundled, lossless)
+4. `pngquant` (PNG, external, numeric quality)
+5. `jpegtran` (JPEG, bundled, lossless)
+6. `mozjpeg` (JPEG, bundled, numeric quality)
+7. `jpegli` (JPEG, bundled, numeric quality)
+8. `libwebp` (WebP, bundled with `cwebp` override, lossless or numeric quality)
+9. `image-webp` (WebP, bundled, lossless)
+10. `avif-aom` (AVIF, bundled, numeric quality)
+11. `avif-rav1e` (AVIF, bundled, numeric quality)
 
 Every per-input report retains the rows for that input's format. Strategies for
 other formats are omitted. A strategy that does not support the selected
@@ -58,7 +58,7 @@ is no larger than the source.
 
 `--strip-metadata` allows metadata removal and requests it through a provider's
 native control when available. It never excludes an otherwise-applicable
-strategy. The mapping is part of each versioned adapter:
+strategy. The mapping is pinned in each adapter:
 
 - OxiPNG selects `StripChunks::Safe` instead of `StripChunks::None`.
 - OptiPNG adds `-strip all`.

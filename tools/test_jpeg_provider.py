@@ -31,8 +31,8 @@ def main() -> int:
 
     binary = args.binary.resolve()
     provider = args.provider.resolve()
-    strategy = f"{args.name}-v1"
-    other = "jpegli-v1" if args.name == "mozjpeg" else "mozjpeg-v1"
+    strategy = args.name
+    other = "jpegli" if args.name == "mozjpeg" else "mozjpeg"
     with tempfile.TemporaryDirectory(prefix=f"imglean-{args.name}-ci-") as temporary:
         directory = Path(temporary)
         source = directory / "source.jpg"

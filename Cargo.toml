@@ -26,10 +26,10 @@ flate2 = { version = "=1.1.9", default-features = false, features = ["rust_backe
 image-webp = "=0.2.4"
 imglean-codecs = { version = "=0.1.0", path = "crates/imglean-codecs" }
 libavif = { version = "=0.14.0", default-features = false, features = ["codec-aom"] }
-oxipng = { version = "=10.1.1", default-features = false, features = ["zopfli"] }
+oxipng = { version = "=10.2.0", default-features = false, features = ["zopfli"] }
 png = { version = "=0.18.1", default-features = false }
 same-file = "=1.0.6"
-zune-jpeg = { version = "=0.5.14", default-features = false, features = ["log", "std"] }
+zune-jpeg = { version = "=0.5.15", default-features = false, features = ["log", "std"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Storage_FileSystem"] }

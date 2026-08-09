@@ -1,6 +1,6 @@
 # Bundled libavif/libaom Strategy
 
-`avif-aom-v1` is enabled for AVIF only at numeric quality. It uses libavif
+`avif-aom` is enabled for AVIF only at numeric quality. It uses libavif
 0.14.0 with the vendored libavif 1.0.4 container library and libaom 3.11.0 AV1
 codec. The strategy pins native quality `Q`, alpha quality 100, speed 6, and one
 thread.

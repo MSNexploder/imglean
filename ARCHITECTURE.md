@@ -35,19 +35,19 @@ GPL/commercial licensing boundary.
 
 ## Registry and discovery
 
-The versioned registry fixes strategy identity and order:
+The ordered registry fixes strategy identity and order:
 
-1. `oxipng-libdeflate-v1` — bundled;
-2. `oxipng-zopfli-v1` — bundled;
-3. `optipng-v1` — bundled OptiPNG for PNG;
-4. `pngquant-v1` — external pngquant for PNG at numeric quality;
-5. `jpegtran-v1` — bundled lossless JPEG coefficient optimization;
-6. `mozjpeg-v1` — bundled MozJPEG for JPEG at numeric quality;
-7. `jpegli-v1` — bundled Jpegli for JPEG at numeric quality;
-8. `libwebp-v1` — bundled libwebp for lossless or numeric-quality WebP;
-9. `image-webp-v1` — bundled lossless image-webp;
-10. `avif-aom-v1` — bundled libavif/libaom at numeric quality; and
-11. `avif-rav1e-v1` — bundled ravif/rav1e at numeric quality.
+1. `oxipng-libdeflate` — bundled;
+2. `oxipng-zopfli` — bundled;
+3. `optipng` — bundled OptiPNG for PNG;
+4. `pngquant` — external pngquant for PNG at numeric quality;
+5. `jpegtran` — bundled lossless JPEG coefficient optimization;
+6. `mozjpeg` — bundled MozJPEG for JPEG at numeric quality;
+7. `jpegli` — bundled Jpegli for JPEG at numeric quality;
+8. `libwebp` — bundled libwebp for lossless or numeric-quality WebP;
+9. `image-webp` — bundled lossless image-webp;
+10. `avif-aom` — bundled libavif/libaom at numeric quality; and
+11. `avif-rav1e` — bundled ravif/rav1e at numeric quality.
 
 Compatible bundled strategies are enabled unless disabled. A configured
 external executable overrides its bundled implementation. Without an override,

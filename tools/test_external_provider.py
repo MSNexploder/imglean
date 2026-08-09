@@ -59,11 +59,11 @@ def main() -> int:
             [
                 binary,
                 "--disable-strategy",
-                "oxipng-libdeflate-v1",
+                "oxipng-libdeflate",
                 "--disable-strategy",
-                "oxipng-zopfli-v1",
+                "oxipng-zopfli",
                 "--require-strategy",
-                "optipng-v1",
+                "optipng",
                 "--strip-metadata",
                 "--output",
                 output,
@@ -84,7 +84,7 @@ def main() -> int:
             raise SystemExit("OptiPNG integration changed the source or created extra output")
         stdout = result.stdout.decode(errors="replace")
         stderr = result.stderr.decode(errors="replace")
-        if "-> optipng-v1" not in stdout or "using optipng-v1 provider at" not in stderr:
+        if "-> optipng" not in stdout or "using optipng provider at" not in stderr:
             raise SystemExit("OptiPNG discovery or winner diagnostics are missing")
 
         all_source = root / "all-strategies.png"
@@ -97,7 +97,7 @@ def main() -> int:
                 "--jobs",
                 "3",
                 "--require-strategy",
-                "optipng-v1",
+                "optipng",
                 "--output",
                 all_output,
                 all_source,
@@ -110,9 +110,9 @@ def main() -> int:
             raise SystemExit(all_result.stderr.decode(errors="replace"))
         all_stdout = all_result.stdout.decode(errors="replace")
         for strategy in (
-            "oxipng-libdeflate-v1",
-            "oxipng-zopfli-v1",
-            "optipng-v1",
+            "oxipng-libdeflate",
+            "oxipng-zopfli",
+            "optipng",
         ):
             if strategy not in all_stdout:
                 raise SystemExit(f"complete registry output is missing {strategy}")

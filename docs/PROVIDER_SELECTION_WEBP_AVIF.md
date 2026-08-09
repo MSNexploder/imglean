@@ -8,7 +8,7 @@ different encoder implementation where practical.
 
 ## Selected WebP implementations
 
-`libwebp-v1` uses Google's reference libwebp 1.6.0 through
+`libwebp` uses Google's reference libwebp 1.6.0 through
 `libwebp-sys` 0.14.4. libwebp is the mature reference encoder/decoder and
 supports both lossy and lossless WebP. The strategy uses the advanced API
 because libwebp's simple lossless API does not preserve RGB values beneath full
@@ -17,7 +17,7 @@ lossless alpha, and one provider thread. `cwebp` is supported as a
 capability-probed override because it accepts WebP input and exposes equivalent
 controls.
 
-`image-webp-v1` uses image-webp 0.2.4 as an independent, safe-Rust lossless
+`image-webp` uses image-webp 0.2.4 as an independent, safe-Rust lossless
 encoder and as the controller decoder. Its encoder is intentionally simpler
 and usually compresses less effectively than libwebp, but it is maintained,
 contains no unsafe code, accepts the full static WebP decode surface, and gives
@@ -30,14 +30,14 @@ configuration. They add no useful candidate diversity.
 
 ## Selected AVIF implementations
 
-`avif-aom-v1` uses libavif with libaom, the reference AV1 implementation.
+`avif-aom` uses libavif with libaom, the reference AV1 implementation.
 libavif provides the production AVIF container API and explicitly supports
 libaom, rav1e, and SVT-AV1 encoder backends. The locked Rust integration is
 `libavif` 0.14.0, which vendors libavif 1.0.4 and libaom 3.11.0. This is older
 than upstream libavif 1.4.2, so the exact locked native revisions are recorded
 as a release fact and must continue to pass dependency/advisory review.
 
-`avif-rav1e-v1` uses ravif 0.13.0 and rav1e 0.8.1. rav1e is an actively
+`avif-rav1e` uses ravif 0.13.0 and rav1e 0.8.1. rav1e is an actively
 maintained AV1 encoder with a still-picture mode and weekly prereleases. This
 path is a genuinely independent AV1 encoder and stays portable without adding
 another C/C++ build system. It encodes decoded RGBA as 8-bit AVIF with native

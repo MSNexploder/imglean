@@ -1,6 +1,6 @@
 # Bundled MozJPEG Strategy
 
-`mozjpeg-v1` is enabled by default for JPEG inputs at numeric quality. ImgLean
+`mozjpeg` is enabled by default for JPEG inputs at numeric quality. ImgLean
 bundles the `mozjpeg` 0.10.13 Rust wrapper and `mozjpeg-sys` 2.2.3 native source.
 The validated JPEG is decoded to grayscale or RGB samples and re-encoded with
 the native quality value, progressive scans, optimized Huffman coding, and

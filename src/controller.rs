@@ -793,19 +793,17 @@ mod tests {
             INVOCATION_TIMEOUT,
             vec![
                 RegistryEntry {
-                    id: StrategyId::OxipngLibdeflateV1,
+                    id: StrategyId::OxipngLibdeflate,
                     state: RegistryState::Runnable(Execution::Bundled),
                 },
                 RegistryEntry {
-                    id: StrategyId::OxipngZopfliV1,
+                    id: StrategyId::OxipngZopfli,
                     state: RegistryState::Runnable(Execution::Bundled),
                 },
             ],
             |_, _, strategy, _| match strategy.id {
-                StrategyId::OxipngLibdeflateV1 => StrategyResult::Candidate(candidate.clone()),
-                StrategyId::OxipngZopfliV1 => {
-                    StrategyResult::Warning("injected warning".to_owned())
-                }
+                StrategyId::OxipngLibdeflate => StrategyResult::Candidate(candidate.clone()),
+                StrategyId::OxipngZopfli => StrategyResult::Warning("injected warning".to_owned()),
                 _ => StrategyResult::NoCandidate,
             },
         );
@@ -859,21 +857,21 @@ mod tests {
             |_, _, strategy, _| {
                 attempted.lock().unwrap().push(strategy.id);
                 match strategy.id {
-                    StrategyId::OxipngLibdeflateV1 => {
+                    StrategyId::OxipngLibdeflate => {
                         StrategyResult::Candidate(first_candidate.clone())
                     }
-                    StrategyId::OxipngZopfliV1 => {
+                    StrategyId::OxipngZopfli => {
                         StrategyResult::Warning("injected failure".to_owned())
                     }
-                    StrategyId::OptipngV1 => StrategyResult::Candidate(winner.clone()),
-                    StrategyId::PngquantV1 => StrategyResult::NoCandidate,
-                    StrategyId::JpegtranV1
-                    | StrategyId::MozjpegV1
-                    | StrategyId::JpegliV1
-                    | StrategyId::LibwebpV1
-                    | StrategyId::ImageWebpV1
-                    | StrategyId::AvifAomV1
-                    | StrategyId::AvifRav1eV1 => {
+                    StrategyId::Optipng => StrategyResult::Candidate(winner.clone()),
+                    StrategyId::Pngquant => StrategyResult::NoCandidate,
+                    StrategyId::Jpegtran
+                    | StrategyId::Mozjpeg
+                    | StrategyId::Jpegli
+                    | StrategyId::Libwebp
+                    | StrategyId::ImageWebp
+                    | StrategyId::AvifAom
+                    | StrategyId::AvifRav1e => {
                         unreachable!()
                     }
                 }
@@ -891,25 +889,25 @@ mod tests {
         assert_eq!(fs::read(output.join("source.png")).unwrap(), base);
         let stdout = String::from_utf8(stdout).unwrap();
         assert!(stdout.contains("baseline                 103 bytes"));
-        assert!(stdout.contains("oxipng-libdeflate-v1     91 bytes"));
-        assert!(stdout.contains("oxipng-zopfli-v1         warning: injected failure"));
+        assert!(stdout.contains("oxipng-libdeflate        91 bytes"));
+        assert!(stdout.contains("oxipng-zopfli            warning: injected failure"));
         let winner_line = stdout
             .lines()
-            .find(|line| line.contains("-> optipng-v1"))
+            .find(|line| line.contains("-> optipng"))
             .expect("winner row");
         assert!(winner_line.contains("67 bytes  winner; saved 36 bytes"));
         for strategy in [
-            StrategyId::JpegtranV1,
-            StrategyId::MozjpegV1,
-            StrategyId::JpegliV1,
+            StrategyId::Jpegtran,
+            StrategyId::Mozjpeg,
+            StrategyId::Jpegli,
         ] {
             assert!(!stdout.contains(strategy.as_str()));
         }
         let stderr = String::from_utf8(stderr).unwrap();
         assert!(stderr.ends_with("Summary: 1 succeeded, 1 warning\n"));
-        assert!(!stderr.contains("jpegtran-v1"));
-        assert!(!stderr.contains("mozjpeg-v1"));
-        assert!(!stderr.contains("jpegli-v1"));
+        assert!(!stderr.contains("jpegtran"));
+        assert!(!stderr.contains("mozjpeg"));
+        assert!(!stderr.contains("jpegli"));
     }
 
     #[test]
@@ -947,10 +945,10 @@ mod tests {
             |_, source, strategy, _| {
                 attempted.lock().unwrap().push(strategy.id);
                 match strategy.id {
-                    StrategyId::JpegtranV1 | StrategyId::MozjpegV1 => {
+                    StrategyId::Jpegtran | StrategyId::Mozjpeg => {
                         StrategyResult::Candidate(source.to_vec())
                     }
-                    StrategyId::JpegliV1 => StrategyResult::Candidate(candidate.to_vec()),
+                    StrategyId::Jpegli => StrategyResult::Candidate(candidate.to_vec()),
                     _ => unreachable!(),
                 }
             },
@@ -958,21 +956,21 @@ mod tests {
 
         assert_eq!(status, 0, "{}", String::from_utf8_lossy(&stderr));
         let stderr = String::from_utf8(stderr).unwrap();
-        assert!(!stderr.contains("optipng-v1"));
-        assert!(!stderr.contains("pngquant-v1"));
+        assert!(!stderr.contains("optipng"));
+        assert!(!stderr.contains("pngquant"));
         let attempted = attempted.into_inner().unwrap();
         assert_eq!(attempted.len(), 3);
-        assert!(attempted.contains(&StrategyId::JpegtranV1));
-        assert!(attempted.contains(&StrategyId::MozjpegV1));
-        assert!(attempted.contains(&StrategyId::JpegliV1));
+        assert!(attempted.contains(&StrategyId::Jpegtran));
+        assert!(attempted.contains(&StrategyId::Mozjpeg));
+        assert!(attempted.contains(&StrategyId::Jpegli));
         assert_eq!(fs::read(output.join("source.jpg")).unwrap(), candidate);
         let stdout = String::from_utf8(stdout).unwrap();
-        assert!(stdout.contains("-> jpegli-v1"));
+        assert!(stdout.contains("-> jpegli"));
         for strategy in [
-            StrategyId::OxipngLibdeflateV1,
-            StrategyId::OxipngZopfliV1,
-            StrategyId::OptipngV1,
-            StrategyId::PngquantV1,
+            StrategyId::OxipngLibdeflate,
+            StrategyId::OxipngZopfli,
+            StrategyId::Optipng,
+            StrategyId::Pngquant,
         ] {
             assert!(!stdout.contains(strategy.as_str()));
         }
@@ -987,19 +985,19 @@ mod tests {
         fs::write(&source, &bytes).unwrap();
         let registry = vec![
             RegistryEntry {
-                id: StrategyId::OxipngLibdeflateV1,
+                id: StrategyId::OxipngLibdeflate,
                 state: RegistryState::Runnable(Execution::Bundled),
             },
             RegistryEntry {
-                id: StrategyId::OxipngZopfliV1,
+                id: StrategyId::OxipngZopfli,
                 state: RegistryState::Disabled,
             },
             RegistryEntry {
-                id: StrategyId::OptipngV1,
+                id: StrategyId::Optipng,
                 state: RegistryState::Unavailable,
             },
             RegistryEntry {
-                id: StrategyId::PngquantV1,
+                id: StrategyId::Pngquant,
                 state: RegistryState::NotApplicable,
             },
         ];
@@ -1018,10 +1016,10 @@ mod tests {
 
         assert_eq!(status, 0);
         let stdout = String::from_utf8(stdout).unwrap();
-        assert!(stdout.contains("oxipng-libdeflate-v1     67 bytes"));
-        assert!(stdout.contains("oxipng-zopfli-v1         disabled"));
-        assert!(stdout.contains("optipng-v1               unavailable"));
-        assert!(stdout.contains("pngquant-v1              not applicable"));
+        assert!(stdout.contains("oxipng-libdeflate        67 bytes"));
+        assert!(stdout.contains("oxipng-zopfli            disabled"));
+        assert!(stdout.contains("optipng                  unavailable"));
+        assert!(stdout.contains("pngquant                 not applicable"));
     }
 
     #[test]
@@ -1066,7 +1064,7 @@ mod tests {
                 maximum.fetch_max(current, Ordering::Relaxed);
                 if matches!(
                     strategy.id,
-                    StrategyId::OxipngLibdeflateV1 | StrategyId::OxipngZopfliV1
+                    StrategyId::OxipngLibdeflate | StrategyId::OxipngZopfli
                 ) {
                     barrier.wait();
                 }
@@ -1116,7 +1114,7 @@ mod tests {
         assert!(
             String::from_utf8(stdout)
                 .unwrap()
-                .contains("-> oxipng-libdeflate-v1")
+                .contains("-> oxipng-libdeflate")
         );
     }
 
@@ -1191,7 +1189,7 @@ mod tests {
         assert_eq!(status, 1);
         let stdout = String::from_utf8(stdout).unwrap();
         assert!(stdout.starts_with("first.png\n"));
-        assert!(stdout.contains("oxipng-libdeflate-v1     not run"));
+        assert!(stdout.contains("oxipng-libdeflate        not run"));
         assert!(stdout.contains("  !! failed"));
         let stderr = String::from_utf8(stderr).unwrap();
         assert!(stderr.contains("aggregate source-byte limit exceeded"));
@@ -1237,7 +1235,7 @@ mod tests {
         let output = directory.create_directory("out");
         let source = directory.path.join("source.png");
         fs::write(&source, valid_png()).unwrap();
-        let strategies = [StrategyId::OxipngLibdeflateV1, StrategyId::OxipngZopfliV1]
+        let strategies = [StrategyId::OxipngLibdeflate, StrategyId::OxipngZopfli]
             .into_iter()
             .map(|id| RegistryEntry {
                 id,
@@ -1347,7 +1345,7 @@ mod tests {
         let output = directory.create_directory("out");
         let source = directory.path.join("source.png");
         fs::write(&source, valid_png()).unwrap();
-        let strategies = [StrategyId::OxipngLibdeflateV1, StrategyId::OxipngZopfliV1]
+        let strategies = [StrategyId::OxipngLibdeflate, StrategyId::OxipngZopfli]
             .into_iter()
             .map(|id| RegistryEntry {
                 id,
@@ -1365,19 +1363,19 @@ mod tests {
             INVOCATION_TIMEOUT,
             strategies,
             |_, _, strategy, _| match strategy.id {
-                StrategyId::OxipngLibdeflateV1 => {
+                StrategyId::OxipngLibdeflate => {
                     StrategyResult::Warning("injected warning".to_owned())
                 }
-                StrategyId::OxipngZopfliV1 => StrategyResult::Failure("injected fatal failure"),
-                StrategyId::OptipngV1
-                | StrategyId::PngquantV1
-                | StrategyId::JpegtranV1
-                | StrategyId::MozjpegV1
-                | StrategyId::JpegliV1
-                | StrategyId::LibwebpV1
-                | StrategyId::ImageWebpV1
-                | StrategyId::AvifAomV1
-                | StrategyId::AvifRav1eV1 => unreachable!(),
+                StrategyId::OxipngZopfli => StrategyResult::Failure("injected fatal failure"),
+                StrategyId::Optipng
+                | StrategyId::Pngquant
+                | StrategyId::Jpegtran
+                | StrategyId::Mozjpeg
+                | StrategyId::Jpegli
+                | StrategyId::Libwebp
+                | StrategyId::ImageWebp
+                | StrategyId::AvifAom
+                | StrategyId::AvifRav1e => unreachable!(),
             },
         );
 
@@ -1385,7 +1383,7 @@ mod tests {
         assert!(!output.join("source.png").exists());
         let stdout = String::from_utf8(stdout).unwrap();
         assert!(stdout.contains("warning: injected warning"));
-        assert!(stdout.contains("oxipng-zopfli-v1         failed"));
+        assert!(stdout.contains("oxipng-zopfli            failed"));
         assert!(stdout.contains("!! failed"));
         let stderr = String::from_utf8(stderr).unwrap();
         assert!(stderr.contains("injected fatal failure"));
@@ -1399,7 +1397,7 @@ mod tests {
         let source = directory.path.join("source.png");
         let bytes = valid_png();
         fs::write(&source, &bytes).unwrap();
-        let strategies = [StrategyId::OxipngLibdeflateV1, StrategyId::OxipngZopfliV1]
+        let strategies = [StrategyId::OxipngLibdeflate, StrategyId::OxipngZopfli]
             .into_iter()
             .map(|id| RegistryEntry {
                 id,
@@ -1417,17 +1415,17 @@ mod tests {
             INVOCATION_TIMEOUT,
             strategies,
             |_, _, strategy, _| match strategy.id {
-                StrategyId::OxipngLibdeflateV1 => StrategyResult::NoCandidate,
-                StrategyId::OxipngZopfliV1 => StrategyResult::Candidate(b"not a PNG".to_vec()),
-                StrategyId::OptipngV1
-                | StrategyId::PngquantV1
-                | StrategyId::JpegtranV1
-                | StrategyId::MozjpegV1
-                | StrategyId::JpegliV1
-                | StrategyId::LibwebpV1
-                | StrategyId::ImageWebpV1
-                | StrategyId::AvifAomV1
-                | StrategyId::AvifRav1eV1 => unreachable!(),
+                StrategyId::OxipngLibdeflate => StrategyResult::NoCandidate,
+                StrategyId::OxipngZopfli => StrategyResult::Candidate(b"not a PNG".to_vec()),
+                StrategyId::Optipng
+                | StrategyId::Pngquant
+                | StrategyId::Jpegtran
+                | StrategyId::Mozjpeg
+                | StrategyId::Jpegli
+                | StrategyId::Libwebp
+                | StrategyId::ImageWebp
+                | StrategyId::AvifAom
+                | StrategyId::AvifRav1e => unreachable!(),
             },
         );
 
@@ -1435,8 +1433,8 @@ mod tests {
         assert_eq!(fs::read(output.join("source.png")).unwrap(), bytes);
         let stdout = String::from_utf8(stdout).unwrap();
         assert!(stdout.contains("-> baseline                 67 bytes  winner"));
-        assert!(stdout.contains("oxipng-libdeflate-v1     no candidate"));
-        assert!(stdout.contains("oxipng-zopfli-v1         rejected: invalid PNG signature"));
+        assert!(stdout.contains("oxipng-libdeflate        no candidate"));
+        assert!(stdout.contains("oxipng-zopfli            rejected: invalid PNG signature"));
         assert_eq!(
             String::from_utf8(stderr).unwrap(),
             "Summary: 1 succeeded, 1 warning\n"
@@ -1494,7 +1492,7 @@ mod tests {
 
     fn test_registry() -> Vec<RegistryEntry> {
         vec![RegistryEntry {
-            id: crate::strategy::StrategyId::OxipngLibdeflateV1,
+            id: crate::strategy::StrategyId::OxipngLibdeflate,
             state: RegistryState::Runnable(crate::strategy::Execution::Bundled),
         }]
     }

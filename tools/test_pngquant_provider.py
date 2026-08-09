@@ -65,13 +65,13 @@ def main() -> int:
                 "--quality",
                 "80",
                 "--disable-strategy",
-                "oxipng-libdeflate-v1",
+                "oxipng-libdeflate",
                 "--disable-strategy",
-                "oxipng-zopfli-v1",
+                "oxipng-zopfli",
                 "--disable-strategy",
-                "optipng-v1",
+                "optipng",
                 "--require-strategy",
-                "pngquant-v1",
+                "pngquant",
                 "--strip-metadata",
                 "--output",
                 output,
@@ -90,7 +90,7 @@ def main() -> int:
             raise SystemExit("pngquant integration changed the source or created extra output")
         stdout = result.stdout.decode(errors="replace")
         stderr = result.stderr.decode(errors="replace")
-        if "-> pngquant-v1" not in stdout or "using pngquant-v1 provider at" not in stderr:
+        if "-> pngquant" not in stdout or "using pngquant provider at" not in stderr:
             raise SystemExit("pngquant discovery or winner diagnostics are missing")
 
         lossless_source = root / "lossless.png"
@@ -101,11 +101,11 @@ def main() -> int:
             binary,
             [
                 "--disable-strategy",
-                "oxipng-libdeflate-v1",
+                "oxipng-libdeflate",
                 "--disable-strategy",
-                "oxipng-zopfli-v1",
+                "oxipng-zopfli",
                 "--disable-strategy",
-                "optipng-v1",
+                "optipng",
                 "--output",
                 lossless_output,
                 lossless_source,
@@ -118,9 +118,9 @@ def main() -> int:
             raise SystemExit("lossless mode did not preserve the baseline")
         lossless_stdout = lossless.stdout.decode(errors="replace")
         lossless_stderr = lossless.stderr.decode(errors="replace")
-        if "pngquant-v1              not applicable" not in lossless_stdout:
+        if "pngquant                 not applicable" not in lossless_stdout:
             raise SystemExit("lossless mode did not report pngquant as not applicable")
-        if "using pngquant-v1" in lossless_stderr:
+        if "using pngquant" in lossless_stderr:
             raise SystemExit("lossless mode unexpectedly discovered or executed pngquant")
     return 0
 

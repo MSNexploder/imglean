@@ -10,83 +10,78 @@ use crate::process;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum StrategyId {
-    OxipngLibdeflateV1,
-    OxipngZopfliV1,
-    OptipngV1,
-    PngquantV1,
-    JpegtranV1,
-    MozjpegV1,
-    JpegliV1,
-    LibwebpV1,
-    ImageWebpV1,
-    AvifAomV1,
-    AvifRav1eV1,
+    OxipngLibdeflate,
+    OxipngZopfli,
+    Optipng,
+    Pngquant,
+    Jpegtran,
+    Mozjpeg,
+    Jpegli,
+    Libwebp,
+    ImageWebp,
+    AvifAom,
+    AvifRav1e,
 }
 
 impl StrategyId {
     pub const ALL: [Self; 11] = [
-        Self::OxipngLibdeflateV1,
-        Self::OxipngZopfliV1,
-        Self::OptipngV1,
-        Self::PngquantV1,
-        Self::JpegtranV1,
-        Self::MozjpegV1,
-        Self::JpegliV1,
-        Self::LibwebpV1,
-        Self::ImageWebpV1,
-        Self::AvifAomV1,
-        Self::AvifRav1eV1,
+        Self::OxipngLibdeflate,
+        Self::OxipngZopfli,
+        Self::Optipng,
+        Self::Pngquant,
+        Self::Jpegtran,
+        Self::Mozjpeg,
+        Self::Jpegli,
+        Self::Libwebp,
+        Self::ImageWebp,
+        Self::AvifAom,
+        Self::AvifRav1e,
     ];
 
     pub const BUNDLED: [Self; 10] = [
-        Self::OxipngLibdeflateV1,
-        Self::OxipngZopfliV1,
-        Self::OptipngV1,
-        Self::JpegtranV1,
-        Self::MozjpegV1,
-        Self::JpegliV1,
-        Self::LibwebpV1,
-        Self::ImageWebpV1,
-        Self::AvifAomV1,
-        Self::AvifRav1eV1,
+        Self::OxipngLibdeflate,
+        Self::OxipngZopfli,
+        Self::Optipng,
+        Self::Jpegtran,
+        Self::Mozjpeg,
+        Self::Jpegli,
+        Self::Libwebp,
+        Self::ImageWebp,
+        Self::AvifAom,
+        Self::AvifRav1e,
     ];
 
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::OxipngLibdeflateV1 => "oxipng-libdeflate-v1",
-            Self::OxipngZopfliV1 => "oxipng-zopfli-v1",
-            Self::OptipngV1 => "optipng-v1",
-            Self::PngquantV1 => "pngquant-v1",
-            Self::JpegtranV1 => "jpegtran-v1",
-            Self::MozjpegV1 => "mozjpeg-v1",
-            Self::JpegliV1 => "jpegli-v1",
-            Self::LibwebpV1 => "libwebp-v1",
-            Self::ImageWebpV1 => "image-webp-v1",
-            Self::AvifAomV1 => "avif-aom-v1",
-            Self::AvifRav1eV1 => "avif-rav1e-v1",
+            Self::OxipngLibdeflate => "oxipng-libdeflate",
+            Self::OxipngZopfli => "oxipng-zopfli",
+            Self::Optipng => "optipng",
+            Self::Pngquant => "pngquant",
+            Self::Jpegtran => "jpegtran",
+            Self::Mozjpeg => "mozjpeg",
+            Self::Jpegli => "jpegli",
+            Self::Libwebp => "libwebp",
+            Self::ImageWebp => "image-webp",
+            Self::AvifAom => "avif-aom",
+            Self::AvifRav1e => "avif-rav1e",
         }
     }
 
     pub const fn format(self) -> ImageFormat {
         match self {
-            Self::OxipngLibdeflateV1
-            | Self::OxipngZopfliV1
-            | Self::OptipngV1
-            | Self::PngquantV1 => ImageFormat::Png,
-            Self::JpegtranV1 | Self::MozjpegV1 | Self::JpegliV1 => ImageFormat::Jpeg,
-            Self::LibwebpV1 | Self::ImageWebpV1 => ImageFormat::Webp,
-            Self::AvifAomV1 | Self::AvifRav1eV1 => ImageFormat::Avif,
+            Self::OxipngLibdeflate | Self::OxipngZopfli | Self::Optipng | Self::Pngquant => {
+                ImageFormat::Png
+            }
+            Self::Jpegtran | Self::Mozjpeg | Self::Jpegli => ImageFormat::Jpeg,
+            Self::Libwebp | Self::ImageWebp => ImageFormat::Webp,
+            Self::AvifAom | Self::AvifRav1e => ImageFormat::Avif,
         }
     }
 
     pub const fn needs_numeric_quality(self) -> bool {
         matches!(
             self,
-            Self::PngquantV1
-                | Self::MozjpegV1
-                | Self::JpegliV1
-                | Self::AvifAomV1
-                | Self::AvifRav1eV1
+            Self::Pngquant | Self::Mozjpeg | Self::Jpegli | Self::AvifAom | Self::AvifRav1e
         )
     }
 
@@ -149,28 +144,28 @@ impl ProviderId {
 
     pub const fn strategy(self) -> StrategyId {
         match self {
-            Self::Optipng => StrategyId::OptipngV1,
-            Self::Pngquant => StrategyId::PngquantV1,
-            Self::Jpegtran => StrategyId::JpegtranV1,
-            Self::Mozjpeg => StrategyId::MozjpegV1,
-            Self::Jpegli => StrategyId::JpegliV1,
-            Self::Libwebp => StrategyId::LibwebpV1,
+            Self::Optipng => StrategyId::Optipng,
+            Self::Pngquant => StrategyId::Pngquant,
+            Self::Jpegtran => StrategyId::Jpegtran,
+            Self::Mozjpeg => StrategyId::Mozjpeg,
+            Self::Jpegli => StrategyId::Jpegli,
+            Self::Libwebp => StrategyId::Libwebp,
         }
     }
 
     pub const fn for_strategy(strategy: StrategyId) -> Option<Self> {
         match strategy {
-            StrategyId::OptipngV1 => Some(Self::Optipng),
-            StrategyId::PngquantV1 => Some(Self::Pngquant),
-            StrategyId::JpegtranV1 => Some(Self::Jpegtran),
-            StrategyId::MozjpegV1 => Some(Self::Mozjpeg),
-            StrategyId::JpegliV1 => Some(Self::Jpegli),
-            StrategyId::LibwebpV1 => Some(Self::Libwebp),
-            StrategyId::OxipngLibdeflateV1
-            | StrategyId::OxipngZopfliV1
-            | StrategyId::ImageWebpV1
-            | StrategyId::AvifAomV1
-            | StrategyId::AvifRav1eV1 => None,
+            StrategyId::Optipng => Some(Self::Optipng),
+            StrategyId::Pngquant => Some(Self::Pngquant),
+            StrategyId::Jpegtran => Some(Self::Jpegtran),
+            StrategyId::Mozjpeg => Some(Self::Mozjpeg),
+            StrategyId::Jpegli => Some(Self::Jpegli),
+            StrategyId::Libwebp => Some(Self::Libwebp),
+            StrategyId::OxipngLibdeflate
+            | StrategyId::OxipngZopfli
+            | StrategyId::ImageWebp
+            | StrategyId::AvifAom
+            | StrategyId::AvifRav1e => None,
         }
     }
 
@@ -504,39 +499,39 @@ mod tests {
         assert_eq!(
             StrategyId::ALL.map(StrategyId::as_str),
             [
-                "oxipng-libdeflate-v1",
-                "oxipng-zopfli-v1",
-                "optipng-v1",
-                "pngquant-v1",
-                "jpegtran-v1",
-                "mozjpeg-v1",
-                "jpegli-v1",
-                "libwebp-v1",
-                "image-webp-v1",
-                "avif-aom-v1",
-                "avif-rav1e-v1",
+                "oxipng-libdeflate",
+                "oxipng-zopfli",
+                "optipng",
+                "pngquant",
+                "jpegtran",
+                "mozjpeg",
+                "jpegli",
+                "libwebp",
+                "image-webp",
+                "avif-aom",
+                "avif-rav1e",
             ]
         );
-        assert_eq!(StrategyId::MozjpegV1.format(), ImageFormat::Jpeg);
-        assert_eq!(StrategyId::JpegtranV1.format(), ImageFormat::Jpeg);
-        assert_eq!(StrategyId::OptipngV1.format(), ImageFormat::Png);
-        assert_eq!(StrategyId::LibwebpV1.format(), ImageFormat::Webp);
-        assert_eq!(StrategyId::AvifAomV1.format(), ImageFormat::Avif);
+        assert_eq!(StrategyId::Mozjpeg.format(), ImageFormat::Jpeg);
+        assert_eq!(StrategyId::Jpegtran.format(), ImageFormat::Jpeg);
+        assert_eq!(StrategyId::Optipng.format(), ImageFormat::Png);
+        assert_eq!(StrategyId::Libwebp.format(), ImageFormat::Webp);
+        assert_eq!(StrategyId::AvifAom.format(), ImageFormat::Avif);
     }
 
     #[test]
     fn lossy_strategies_are_not_applicable_at_lossless_quality() {
         let selection = Selection {
-            disabled: vec![StrategyId::OptipngV1],
+            disabled: vec![StrategyId::Optipng],
             ..Selection::default()
         };
         let registry = resolve(&selection).unwrap();
         for id in [
-            StrategyId::PngquantV1,
-            StrategyId::MozjpegV1,
-            StrategyId::JpegliV1,
-            StrategyId::AvifAomV1,
-            StrategyId::AvifRav1eV1,
+            StrategyId::Pngquant,
+            StrategyId::Mozjpeg,
+            StrategyId::Jpegli,
+            StrategyId::AvifAom,
+            StrategyId::AvifRav1e,
         ] {
             assert_eq!(
                 registry.iter().find(|entry| entry.id == id).unwrap().state,
@@ -573,10 +568,10 @@ mod tests {
             quality: Quality::Numeric(80),
             strip_metadata: true,
             disabled: vec![
-                StrategyId::OptipngV1,
-                StrategyId::PngquantV1,
-                StrategyId::JpegtranV1,
-                StrategyId::JpegliV1,
+                StrategyId::Optipng,
+                StrategyId::Pngquant,
+                StrategyId::Jpegtran,
+                StrategyId::Jpegli,
             ],
             ..Selection::default()
         };
@@ -585,7 +580,7 @@ mod tests {
             !matches!(
                 registry
                     .iter()
-                    .find(|entry| entry.id == StrategyId::MozjpegV1)
+                    .find(|entry| entry.id == StrategyId::Mozjpeg)
                     .unwrap()
                     .state,
                 RegistryState::NotApplicable
@@ -680,10 +675,10 @@ mod tests {
             provider_paths: vec![configured.clone()],
             quality: Quality::Numeric(80),
             disabled: vec![
-                StrategyId::OptipngV1,
-                StrategyId::PngquantV1,
-                StrategyId::JpegtranV1,
-                StrategyId::JpegliV1,
+                StrategyId::Optipng,
+                StrategyId::Pngquant,
+                StrategyId::Jpegtran,
+                StrategyId::Jpegli,
             ],
             ..Selection::default()
         };
@@ -691,14 +686,14 @@ mod tests {
             resolve(&optional)
                 .unwrap()
                 .iter()
-                .find(|entry| entry.id == StrategyId::MozjpegV1)
+                .find(|entry| entry.id == StrategyId::Mozjpeg)
                 .unwrap()
                 .state,
             RegistryState::Unavailable
         );
 
         let required = Selection {
-            required: vec![StrategyId::MozjpegV1],
+            required: vec![StrategyId::Mozjpeg],
             provider_paths: vec![configured],
             quality: Quality::Numeric(80),
             disabled: optional.disabled,
@@ -729,25 +724,21 @@ mod tests {
         };
         let optional = Selection {
             provider_paths: vec![configured.clone()],
-            disabled: vec![
-                StrategyId::OptipngV1,
-                StrategyId::MozjpegV1,
-                StrategyId::JpegliV1,
-            ],
+            disabled: vec![StrategyId::Optipng, StrategyId::Mozjpeg, StrategyId::Jpegli],
             ..Selection::default()
         };
         assert_eq!(
             resolve(&optional)
                 .unwrap()
                 .iter()
-                .find(|entry| entry.id == StrategyId::JpegtranV1)
+                .find(|entry| entry.id == StrategyId::Jpegtran)
                 .unwrap()
                 .state,
             RegistryState::Unavailable
         );
 
         let required = Selection {
-            required: vec![StrategyId::JpegtranV1],
+            required: vec![StrategyId::Jpegtran],
             provider_paths: vec![configured],
             disabled: optional.disabled,
             ..Selection::default()
@@ -778,10 +769,10 @@ mod tests {
             }],
             quality: Quality::Numeric(80),
             disabled: vec![
-                StrategyId::OptipngV1,
-                StrategyId::PngquantV1,
-                StrategyId::JpegtranV1,
-                StrategyId::MozjpegV1,
+                StrategyId::Optipng,
+                StrategyId::Pngquant,
+                StrategyId::Jpegtran,
+                StrategyId::Mozjpeg,
             ],
             ..Selection::default()
         };
@@ -790,7 +781,7 @@ mod tests {
             resolve(&selection)
                 .unwrap()
                 .iter()
-                .find(|entry| entry.id == StrategyId::JpegliV1)
+                .find(|entry| entry.id == StrategyId::Jpegli)
                 .unwrap()
                 .state,
             RegistryState::Unavailable
