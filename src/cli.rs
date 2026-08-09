@@ -19,6 +19,7 @@ Options:\n\
   --jobs N                 Run up to N strategy workers (1-3; default: auto)\n\
   --timeout SECONDS        Per-strategy timeout (6-600; default: 60)\n\
   --quality VALUE          lossless or 1-100 (default: lossless)\n\
+  --strip-metadata         Request native metadata stripping (best effort)\n\
   --disable-strategy ID    Disable a strategy; may be repeated\n\
   --require-strategy ID    Require an available strategy; may be repeated\n\
   --provider NAME PATH     Use and require a supported provider executable\n\
@@ -142,6 +143,14 @@ where
                 return usage("--quality may be specified only once");
             }
             quality = Some(parse_quality(arguments.next())?);
+            continue;
+        }
+
+        if options && argument == OsStr::new("--strip-metadata") {
+            if strategies.strip_metadata {
+                return usage("--strip-metadata may be specified only once");
+            }
+            strategies.strip_metadata = true;
             continue;
         }
 
@@ -478,6 +487,30 @@ mod tests {
                 "--quality requires lossless or an integer from 1 to 100"
             );
         }
+    }
+
+    #[test]
+    fn parses_metadata_stripping_as_an_opt_in_policy() {
+        let Parsed::Run(arguments) =
+            parse_strings(&["imglean", "--strip-metadata", "--output", "out", "a.png"]).unwrap()
+        else {
+            panic!("expected runnable arguments");
+        };
+        assert!(arguments.strategies.strip_metadata);
+
+        assert_eq!(
+            parse_strings(&[
+                "imglean",
+                "--strip-metadata",
+                "--strip-metadata",
+                "--output",
+                "out",
+                "a.png",
+            ])
+            .unwrap_err()
+            .message(),
+            "--strip-metadata may be specified only once"
+        );
     }
 
     #[test]

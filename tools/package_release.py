@@ -172,7 +172,7 @@ def release_manifest(
         if node["id"] in identities
     }
     return {
-        "schema_version": 6,
+        "schema_version": 7,
         "package": "imglean",
         "version": tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"],
         "source_commit": run(["git", "rev-parse", "HEAD"]),
@@ -227,12 +227,14 @@ def release_manifest(
                 "execution": "embedded",
                 "format": "PNG",
                 "settings": "OxiPNG 10.1.1, pinned filters, libdeflater level 11",
+                "metadata": "preserve by default; OxiPNG Safe with --strip-metadata",
             },
             {
                 "id": "oxipng-zopfli-v1",
                 "execution": "embedded",
                 "format": "PNG",
                 "settings": "OxiPNG 10.1.1, pinned filters, Zopfli 15 iterations",
+                "metadata": "preserve by default; OxiPNG Safe with --strip-metadata",
             },
             {
                 "id": "optipng-v1",
@@ -241,6 +243,16 @@ def release_manifest(
                 "format": "PNG",
                 "discovery": "CLI capability probe; provider version is not gated",
                 "arguments": ["-quiet", "-o2", "-out", "CANDIDATE", "--", "INPUT"],
+                "strip_metadata_arguments": [
+                    "-quiet",
+                    "-o2",
+                    "-strip",
+                    "all",
+                    "-out",
+                    "CANDIDATE",
+                    "--",
+                    "INPUT",
+                ],
             },
             {
                 "id": "pngquant-v1",
@@ -261,6 +273,7 @@ def release_manifest(
                     "--",
                     "INPUT",
                 ],
+                "metadata": "always requests provider-native --strip",
             },
             {
                 "id": "jpegtran-v1",
@@ -272,6 +285,16 @@ def release_manifest(
                 "arguments": [
                     "-copy",
                     "all",
+                    "-optimize",
+                    "-progressive",
+                    "-strict",
+                    "-outfile",
+                    "CANDIDATE",
+                    "INPUT",
+                ],
+                "strip_metadata_arguments": [
+                    "-copy",
+                    "none",
                     "-optimize",
                     "-progressive",
                     "-strict",
@@ -297,6 +320,7 @@ def release_manifest(
                     "CANDIDATE",
                     "INPUT",
                 ],
+                "metadata": "preserves saved markers; --strip-metadata adds no argument",
             },
             {
                 "id": "jpegli-v1",
@@ -313,6 +337,7 @@ def release_manifest(
                     "INPUT",
                     "CANDIDATE",
                 ],
+                "metadata": "native re-encode; --strip-metadata adds no argument",
             },
         ],
         "quality_policy": {
@@ -320,6 +345,13 @@ def release_manifest(
             "default": "lossless",
             "numeric_mapping": "provider-native and strategy-versioned",
             "candidate_trust": "format-specific basic candidate gate plus pinned adapter settings",
+        },
+        "metadata_policy": {
+            "control": "--strip-metadata",
+            "mapping": "provider-native and strategy-versioned",
+            "guarantee": "best effort; unchanged baseline remains eligible",
+            "controller_transform": False,
+            "controller_verification": False,
         },
         "strategy_workers": {
             "default_cap": 2,
@@ -333,7 +365,7 @@ def release_manifest(
                 "oxipng_internal_minimum": 1,
             },
         },
-        "limits_version": "v7",
+        "limits_version": "v8",
         "build_environment": {
             "platform": platform.platform(),
             "packager": f"Python {platform.python_version()}",

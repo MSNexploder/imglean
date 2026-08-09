@@ -35,6 +35,63 @@ fn complete_worker_race_publishes_a_smaller_valid_result() {
 }
 
 #[test]
+fn metadata_stripping_is_delegated_to_the_winning_strategy() {
+    let directory = TestDirectory::new();
+    let output_directory = directory.create_directory("out");
+    let source = directory.path.join("metadata.png");
+    let source_bytes = png_with_text_metadata();
+    fs::write(&source, &source_bytes).unwrap();
+
+    let result = Command::new(env!("CARGO_BIN_EXE_imglean"))
+        .arg("--strip-metadata")
+        .arg("--disable-strategy")
+        .arg("oxipng-zopfli-v1")
+        .arg("--disable-strategy")
+        .arg("optipng-v1")
+        .arg("--output")
+        .arg(&output_directory)
+        .arg(&source)
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    let candidate = fs::read(output_directory.join("metadata.png")).unwrap();
+    assert!(!candidate.windows(4).any(|bytes| bytes == b"tEXt"));
+    assert!(stdout(&result).contains("-> oxipng-libdeflate-v1"));
+    assert_eq!(fs::read(source).unwrap(), source_bytes);
+}
+
+#[test]
+fn metadata_stripping_request_does_not_transform_the_baseline() {
+    let directory = TestDirectory::new();
+    let output_directory = directory.create_directory("out");
+    let source = directory.path.join("metadata.png");
+    let source_bytes = png_with_text_metadata();
+    fs::write(&source, &source_bytes).unwrap();
+
+    let result = Command::new(env!("CARGO_BIN_EXE_imglean"))
+        .arg("--strip-metadata")
+        .arg("--disable-strategy")
+        .arg("oxipng-libdeflate-v1")
+        .arg("--disable-strategy")
+        .arg("oxipng-zopfli-v1")
+        .arg("--disable-strategy")
+        .arg("optipng-v1")
+        .arg("--output")
+        .arg(&output_directory)
+        .arg(&source)
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    assert_eq!(
+        fs::read(output_directory.join("metadata.png")).unwrap(),
+        source_bytes
+    );
+    assert!(stdout(&result).contains("-> baseline"));
+}
+
+#[test]
 fn jpeg_baseline_uses_format_specific_registry_and_replaces_output() {
     let directory = TestDirectory::new();
     let output_directory = directory.create_directory("out");
@@ -229,6 +286,16 @@ fn compressible_png() -> Vec<u8> {
     encoder.write_all(&filtered).unwrap();
     push_chunk(&mut png, b"IDAT", &encoder.finish().unwrap());
     push_chunk(&mut png, b"IEND", &[]);
+    png
+}
+
+fn png_with_text_metadata() -> Vec<u8> {
+    let mut png = compressible_png();
+    let iend = png.split_off(png.len() - 12);
+    let mut metadata = b"Comment\0".to_vec();
+    metadata.extend(std::iter::repeat_n(b'x', 8_192));
+    push_chunk(&mut png, b"tEXt", &metadata);
+    png.extend_from_slice(&iend);
     png
 }
 

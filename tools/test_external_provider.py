@@ -23,9 +23,13 @@ def compressible_png() -> bytes:
     width = height = 64
     filtered = b"".join(b"\x00" + bytes(width * 4) for _ in range(height))
     header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(
-        b"IDAT", zlib.compress(filtered, 0)
-    ) + chunk(b"IEND", b"")
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"tEXt", b"Comment\x00" + b"metadata" * 1024)
+        + chunk(b"IDAT", zlib.compress(filtered, 0))
+        + chunk(b"IEND", b"")
+    )
 
 
 def main() -> int:
@@ -60,6 +64,7 @@ def main() -> int:
                 "oxipng-zopfli-v1",
                 "--require-strategy",
                 "optipng-v1",
+                "--strip-metadata",
                 "--output",
                 output,
                 source,
@@ -73,6 +78,8 @@ def main() -> int:
         candidate = (output / source.name).read_bytes()
         if len(candidate) >= len(source_bytes):
             raise SystemExit("OptiPNG did not produce the required real size reduction")
+        if b"tEXt" in candidate:
+            raise SystemExit("OptiPNG did not strip PNG metadata when requested")
         if source.read_bytes() != source_bytes or len(list(output.iterdir())) != 1:
             raise SystemExit("OptiPNG integration changed the source or created extra output")
         stdout = result.stdout.decode(errors="replace")

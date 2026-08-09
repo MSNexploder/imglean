@@ -22,7 +22,9 @@ the result only when it is strictly smaller than the current winner.
 The CLI re-encodes image samples and does not promise to preserve Exif
 orientation or other application metadata. Version 0.6 deliberately treats
 that metadata as opaque and permits this behavior only after the user selects
-numeric JPEG quality.
+numeric JPEG quality. `--strip-metadata` maps to this existing native re-encode
+behavior and adds no separate command argument; CI verifies that a source Exif
+marker is not copied.
 
 Jpegli also exposes libjpeg-compatible and native C++ libraries. ImgLean uses the
 maintained CLI because it preserves the existing process crash/timeout boundary

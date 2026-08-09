@@ -43,6 +43,7 @@ pub fn run_strategy(
     source: &[u8],
     strategy: &Strategy,
     quality: Quality,
+    strip_metadata: bool,
     strategy_timeout: Duration,
 ) -> StrategyResult {
     let maximum_live_bytes = (source.len() as u64)
@@ -86,6 +87,7 @@ pub fn run_strategy(
     let command = match strategy_command(
         strategy,
         quality,
+        strip_metadata,
         strategy_timeout,
         &private_input,
         &candidate_path,
@@ -141,6 +143,7 @@ pub fn run_strategy(
 fn strategy_command(
     strategy: &Strategy,
     quality: Quality,
+    strip_metadata: bool,
     strategy_timeout: Duration,
     private_input: &Path,
     candidate_path: &Path,
@@ -161,15 +164,18 @@ fn strategy_command(
                         .as_secs()
                         .to_string(),
                 )
+                .arg(if strip_metadata { "strip" } else { "preserve" })
                 .arg(private_input)
                 .arg(candidate_path);
             Ok(command)
         }
         Execution::External { executable, .. } if strategy.id == StrategyId::OptipngV1 => {
             let mut command = Command::new(executable);
+            command.arg("-quiet").arg("-o2");
+            if strip_metadata {
+                command.arg("-strip").arg("all");
+            }
             command
-                .arg("-quiet")
-                .arg("-o2")
                 .arg("-out")
                 .arg(candidate_path)
                 .arg("--")
@@ -198,7 +204,7 @@ fn strategy_command(
             let mut command = Command::new(executable);
             command
                 .arg("-copy")
-                .arg("all")
+                .arg(if strip_metadata { "none" } else { "all" })
                 .arg("-optimize")
                 .arg("-progressive")
                 .arg("-strict")
@@ -242,7 +248,7 @@ fn strategy_command(
 }
 
 fn run_private(arguments: &[OsString]) -> i32 {
-    if arguments.len() != 7 || arguments[3] != OsStr::new(LIMITS_VERSION) {
+    if arguments.len() != 8 || arguments[3] != OsStr::new(LIMITS_VERSION) {
         return private_error("invalid private worker protocol");
     }
     let Some(strategy) = arguments[2]
@@ -263,8 +269,13 @@ fn run_private(arguments: &[OsString]) -> i32 {
     else {
         return private_error("invalid private worker timeout");
     };
-    let input = Path::new(&arguments[5]);
-    let candidate = Path::new(&arguments[6]);
+    let strip_metadata = match arguments[5].to_str() {
+        Some("strip") => true,
+        Some("preserve") => false,
+        _ => return private_error("invalid private worker metadata policy"),
+    };
+    let input = Path::new(&arguments[6]);
+    let candidate = Path::new(&arguments[7]);
     let bytes = match read_bounded(input, MAX_SOURCE_BYTES) {
         Ok(bytes) => bytes,
         Err(message) => return private_error(message),
@@ -272,7 +283,11 @@ fn run_private(arguments: &[OsString]) -> i32 {
     if validate_source(&bytes).is_err() {
         return private_error("private provider input failed PNG validation");
     }
-    let options = oxipng_options(strategy, Duration::from_secs(timeout_seconds));
+    let options = oxipng_options(
+        strategy,
+        Duration::from_secs(timeout_seconds),
+        strip_metadata,
+    );
     let optimized = match oxipng::optimize_from_memory(&bytes, &options) {
         Ok(bytes) => bytes,
         Err(_) => return private_error("OxiPNG could not optimize the private input"),
@@ -298,7 +313,7 @@ fn run_private(arguments: &[OsString]) -> i32 {
     0
 }
 
-fn oxipng_options(strategy: StrategyId, timeout: Duration) -> Options {
+fn oxipng_options(strategy: StrategyId, timeout: Duration, strip_metadata: bool) -> Options {
     let deflater = match strategy {
         StrategyId::OxipngLibdeflateV1 => Deflater::Libdeflater { compression: 11 },
         StrategyId::OxipngZopfliV1 => Deflater::Zopfli(ZopfliOptions {
@@ -331,7 +346,11 @@ fn oxipng_options(strategy: StrategyId, timeout: Duration) -> Options {
         grayscale_reduction: false,
         idat_recoding: true,
         scale_16: false,
-        strip: StripChunks::None,
+        strip: if strip_metadata {
+            StripChunks::Safe
+        } else {
+            StripChunks::None
+        },
         deflater,
         fast_evaluation: true,
         timeout: Some(timeout),
@@ -435,7 +454,7 @@ mod tests {
     #[test]
     fn options_pin_every_policy_boundary() {
         let timeout = DEFAULT_STRATEGY_TIMEOUT.saturating_sub(OXIPNG_CLEANUP_RESERVE);
-        let options = oxipng_options(StrategyId::OxipngLibdeflateV1, timeout);
+        let options = oxipng_options(StrategyId::OxipngLibdeflateV1, timeout, false);
         assert!(!options.fix_errors);
         assert!(options.force);
         assert_eq!(
@@ -461,7 +480,10 @@ mod tests {
         assert_eq!(options.max_decompressed_size, Some(MAX_RECONSTRUCTED_BYTES));
         assert_eq!(options.deflater, Deflater::Libdeflater { compression: 11 });
 
-        let zopfli = oxipng_options(StrategyId::OxipngZopfliV1, timeout);
+        let stripped = oxipng_options(StrategyId::OxipngLibdeflateV1, timeout, true);
+        assert_eq!(stripped.strip, StripChunks::Safe);
+
+        let zopfli = oxipng_options(StrategyId::OxipngZopfliV1, timeout, false);
         assert_eq!(
             zopfli.deflater,
             Deflater::Zopfli(ZopfliOptions {
@@ -486,6 +508,7 @@ mod tests {
                 OsString::from(strategy.as_str()),
                 OsString::from(LIMITS_VERSION),
                 OsString::from("55"),
+                OsString::from("preserve"),
                 input.into_os_string(),
                 candidate_path.clone().into_os_string(),
             ];
@@ -493,6 +516,32 @@ mod tests {
             let candidate = fs::read(candidate_path).unwrap();
             assert!(!candidate.is_empty());
             assert!(candidate.len() <= source.len());
+        }
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn embedded_strategies_strip_metadata_when_requested() {
+        let directory = test_directory();
+        let source = png_with_text_metadata();
+        for strategy in StrategyId::EMBEDDED {
+            let input = directory.join(format!("{}-strip-input.png", strategy.as_str()));
+            let candidate_path =
+                directory.join(format!("{}-strip-candidate.png", strategy.as_str()));
+            fs::write(&input, &source).unwrap();
+            let arguments = [
+                OsString::from("imglean"),
+                OsString::from(WORKER_ROLE),
+                OsString::from(strategy.as_str()),
+                OsString::from(LIMITS_VERSION),
+                OsString::from("55"),
+                OsString::from("strip"),
+                input.into_os_string(),
+                candidate_path.clone().into_os_string(),
+            ];
+            assert_eq!(run_private(&arguments), 0);
+            let candidate = fs::read(candidate_path).unwrap();
+            assert!(!candidate.windows(4).any(|bytes| bytes == b"tEXt"));
         }
         fs::remove_dir_all(directory).unwrap();
     }
@@ -506,6 +555,7 @@ mod tests {
         let command = strategy_command(
             &strategy,
             Quality::Lossless,
+            true,
             Duration::from_secs(90),
             Path::new("private-input.png"),
             Path::new("candidate.png"),
@@ -518,6 +568,7 @@ mod tests {
                 OsStr::new("oxipng-libdeflate-v1"),
                 OsStr::new(LIMITS_VERSION),
                 OsStr::new("85"),
+                OsStr::new("strip"),
                 OsStr::new("private-input.png"),
                 OsStr::new("candidate.png"),
             ]
@@ -530,6 +581,7 @@ mod tests {
         let command = strategy_command(
             &strategy,
             Quality::Lossless,
+            false,
             DEFAULT_STRATEGY_TIMEOUT,
             Path::new("private-input.png"),
             Path::new("candidate.png"),
@@ -547,6 +599,29 @@ mod tests {
                 OsStr::new("private-input.png"),
             ]
         );
+
+        let command = strategy_command(
+            &strategy,
+            Quality::Lossless,
+            true,
+            DEFAULT_STRATEGY_TIMEOUT,
+            Path::new("private-input.png"),
+            Path::new("candidate.png"),
+        )
+        .unwrap();
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [
+                OsStr::new("-quiet"),
+                OsStr::new("-o2"),
+                OsStr::new("-strip"),
+                OsStr::new("all"),
+                OsStr::new("-out"),
+                OsStr::new("candidate.png"),
+                OsStr::new("--"),
+                OsStr::new("private-input.png"),
+            ]
+        );
     }
 
     #[test]
@@ -555,6 +630,7 @@ mod tests {
         let command = strategy_command(
             &strategy,
             Quality::Numeric(80),
+            true,
             DEFAULT_STRATEGY_TIMEOUT,
             Path::new("private-input.png"),
             Path::new("candidate.png"),
@@ -589,6 +665,7 @@ mod tests {
         let command = strategy_command(
             &jpegtran,
             Quality::Lossless,
+            false,
             DEFAULT_STRATEGY_TIMEOUT,
             Path::new("private-input.jpg"),
             Path::new("candidate.jpg"),
@@ -608,6 +685,17 @@ mod tests {
             ]
         );
 
+        let command = strategy_command(
+            &jpegtran,
+            Quality::Lossless,
+            true,
+            DEFAULT_STRATEGY_TIMEOUT,
+            Path::new("private-input.jpg"),
+            Path::new("candidate.jpg"),
+        )
+        .unwrap();
+        assert_eq!(command.get_args().nth(1), Some(OsStr::new("none")));
+
         let mozjpeg = Strategy {
             id: StrategyId::MozjpegV1,
             execution: Execution::External {
@@ -617,6 +705,7 @@ mod tests {
         let command = strategy_command(
             &mozjpeg,
             Quality::Numeric(82),
+            true,
             DEFAULT_STRATEGY_TIMEOUT,
             Path::new("private-input.jpg"),
             Path::new("candidate.jpg"),
@@ -645,6 +734,7 @@ mod tests {
         let command = strategy_command(
             &jpegli,
             Quality::Numeric(82),
+            true,
             DEFAULT_STRATEGY_TIMEOUT,
             Path::new("private-input.jpg"),
             Path::new("candidate.jpg"),
@@ -680,6 +770,7 @@ mod tests {
                 &source,
                 &external_strategy(success),
                 Quality::Lossless,
+                false,
                 DEFAULT_STRATEGY_TIMEOUT,
             ),
             StrategyResult::Candidate(source.clone())
@@ -695,6 +786,7 @@ mod tests {
             &source,
             &external_strategy(failure),
             Quality::Lossless,
+            false,
             DEFAULT_STRATEGY_TIMEOUT,
         );
         assert!(matches!(
@@ -710,6 +802,7 @@ mod tests {
                 &source,
                 &external_strategy(timeout),
                 Quality::Lossless,
+                false,
                 Duration::from_millis(20),
             ),
             StrategyResult::Warning("worker timeout exceeded".to_owned())
@@ -726,6 +819,7 @@ mod tests {
                 &source,
                 &external_strategy(mutation),
                 Quality::Lossless,
+                false,
                 DEFAULT_STRATEGY_TIMEOUT,
             ),
             StrategyResult::Failure("the private provider input changed during execution")
@@ -747,6 +841,7 @@ mod tests {
                 &compressible_png(),
                 &pngquant_strategy(executable),
                 Quality::Numeric(100),
+                false,
                 DEFAULT_STRATEGY_TIMEOUT,
             ),
             StrategyResult::NoCandidate
@@ -797,6 +892,14 @@ mod tests {
         encoder.write_all(&filtered).unwrap();
         push_chunk(&mut png, b"IDAT", &encoder.finish().unwrap());
         push_chunk(&mut png, b"IEND", &[]);
+        png
+    }
+
+    fn png_with_text_metadata() -> Vec<u8> {
+        let mut png = compressible_png();
+        let iend = png.split_off(png.len() - 12);
+        push_chunk(&mut png, b"tEXt", b"Comment\0worker integration");
+        png.extend_from_slice(&iend);
         png
     }
 

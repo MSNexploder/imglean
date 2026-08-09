@@ -18,7 +18,7 @@ palette_reduction: false
 grayscale_reduction: false
 idat_recoding: true
 scale_16: false
-strip: None
+strip: None by default; Safe with --strip-metadata
 fast_evaluation: true
 timeout: effective strategy timeout minus 5 seconds, minimum 1 (default: 55 seconds)
 max_decompressed_size: 256 MiB
@@ -28,7 +28,9 @@ max_decompressed_size: 256 MiB
 `oxipng-zopfli-v1` uses 15 iterations, unlimited iterations without improvement,
 and at most 15 block splits. Both are enabled by default and preserve interlace,
 representation, alpha values, and ancillary data according to this pinned
-configuration. Error repair and metadata stripping are disabled.
+configuration. Error repair remains disabled. Metadata stripping is disabled
+by default; when requested, OxiPNG's native safe mode removes chunks it
+classifies as never affecting rendering while retaining display-relevant data.
 
 `force` makes OxiPNG return its attempted result so ImgLean owns comparison and
 tie-breaking. A valid non-improving candidate is normal.

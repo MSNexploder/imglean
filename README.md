@@ -52,6 +52,7 @@ imglean --provider jpegtran /absolute/path/to/jpegtran --output ./optimized phot
 imglean --quality 80 --provider mozjpeg /absolute/path/to/cjpeg --output ./optimized photo.jpg
 imglean --quality 80 --provider jpegli /absolute/path/to/cjpegli --output ./optimized photo.jpg
 imglean --jobs 1 --output ./optimized photo.png
+imglean --strip-metadata --output ./optimized photo.jpg icon.png
 ```
 
 `--provider` both selects the executable and requires its adapter. ImgLean never
@@ -66,15 +67,27 @@ unavailable provider is reported as `unavailable`; at lossless quality pngquant,
 MozJPEG, and Jpegli are `not applicable` and are not probed. jpegtran remains
 applicable at lossless and numeric quality.
 
+`--strip-metadata` allows metadata removal and asks strategies with a native
+control to use it. OxiPNG uses its safe strip mode, OptiPNG strips all PNG
+metadata it recognizes, jpegtran copies no extra JPEG markers, and pngquant
+already strips optional metadata. Jpegli's native decode/re-encode path does
+not copy source application markers. MozJPEG exposes no compatible removal
+control and may preserve them, but remains eligible. No otherwise-applicable
+strategy is excluded solely because it cannot strip metadata. ImgLean does not
+implement a separate metadata stripper or verify that all metadata is gone.
+The unchanged source baseline still participates and can win, so this option is
+best effort rather than a guarantee that the selected output contains no
+metadata.
+
 Version 0.6 accepts bounded static PNGs in every standard color-type and
 bit-depth combination, including Adam7. It verifies container checksums and a
 complete decode, requires candidate dimensions to match, and refuses APNG,
 `caBX`, and XMP in PNG text chunks. Other accepted ancillary data is opaque.
 ImgLean trusts each audited, pinned strategy to honor its fidelity and metadata
 configuration; it does not independently compare pixels, calculate perceptual
-quality, or compare ancillary payloads. pngquant intentionally changes colors
-and strips optional metadata; the basic PNG gate still rejects malformed,
-animated, wrong-sized, C2PA, and XMP candidates.
+quality, compare ancillary payloads, or verify metadata stripping. pngquant
+intentionally changes colors and strips optional metadata; the basic PNG gate
+still rejects malformed, animated, wrong-sized, C2PA, and XMP candidates.
 It also accepts bounded 8-bit baseline, extended sequential, and progressive
 Huffman JPEGs, requires a complete decode and matching candidate dimensions,
 and refuses standard XMP plus APP11. Other accepted JPEG application and comment

@@ -66,6 +66,13 @@ dimensions must match the source. The provider's audited fidelity and metadata
 configuration—not a second pixel, perceptual-quality, or ancillary
 comparison—establishes transformation semantics.
 
+The controller passes the common `--strip-metadata` request into each strategy
+mapping. A strategy uses its native removal control when one exists and remains
+eligible when one does not. The controller does not rewrite a candidate or
+inspect it for successful metadata removal. The baseline remains the captured
+source bytes, so it can still win unchanged when every candidate is larger,
+equal, absent, or rejected.
+
 ## Per-input flow
 
 1. Resolve the strategy registry and preflight every input/output mapping.

@@ -1,6 +1,6 @@
 # Version 0.6 Resource Limits
 
-This contract records limits version `v7`. `src/limits.rs` is authoritative;
+This contract records limits version `v8`. `src/limits.rs` is authoritative;
 changing a value requires a limits-version and boundary-test review.
 
 ## Hard byte and structure limits

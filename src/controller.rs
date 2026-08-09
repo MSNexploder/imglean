@@ -16,6 +16,7 @@ use crate::worker::{self, StrategyResult};
 
 pub fn run(arguments: Arguments, stdout: impl Write, stderr: impl Write) -> i32 {
     let quality = arguments.strategies.quality;
+    let strip_metadata = arguments.strategies.strip_metadata;
     let registry = match strategy::resolve(&arguments.strategies) {
         Ok(registry) => registry,
         Err(error) => {
@@ -39,7 +40,14 @@ pub fn run(arguments: Arguments, stdout: impl Write, stderr: impl Write) -> i32 
         INVOCATION_TIMEOUT,
         registry,
         move |artifacts, source, strategy, timeout| {
-            worker::run_strategy(artifacts, source, strategy, quality, timeout)
+            worker::run_strategy(
+                artifacts,
+                source,
+                strategy,
+                quality,
+                strip_metadata,
+                timeout,
+            )
         },
     )
 }

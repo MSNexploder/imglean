@@ -47,10 +47,13 @@ ImgLean does not compare decoded samples, RGB beneath full transparency, chunk
 order, ancillary payload identity, or perceptual quality. Those transformations
 remain opaque provider output. Fidelity and metadata behavior are therefore
 properties of the audited, versioned provider configuration. The lossless
-strategies do not request error repair, fidelity reduction, metadata stripping,
-transparent-RGB changes, or forced interlace changes. At numeric quality,
-`pngquant-v1` intentionally reduces colors and strips optional metadata. Every
-candidate still passes the structural gate above.
+strategies do not request error repair, fidelity reduction,
+transparent-RGB changes, or forced interlace changes. By default they preserve
+metadata according to their native behavior; `--strip-metadata` switches
+OxiPNG to safe stripping and adds OptiPNG's all-metadata strip option. At
+numeric quality, `pngquant-v1` intentionally reduces colors and strips optional
+metadata. Every candidate still passes the structural gate above, which does
+not verify that metadata was removed.
 
 ## Bounds and corpus
 

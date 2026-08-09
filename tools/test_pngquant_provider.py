@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import binascii
 import os
 import shutil
+import struct
 import subprocess
 import tempfile
 from pathlib import Path
@@ -13,6 +15,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = ROOT / "tests/corpus/png/v2/accepted/pngquant-reduction.png"
+
+
+def chunk(name: bytes, data: bytes) -> bytes:
+    crc = binascii.crc32(name + data) & 0xFFFFFFFF
+    return struct.pack(">I", len(data)) + name + data + struct.pack(">I", crc)
+
+
+def with_text_metadata(png: bytes) -> bytes:
+    return png[:-12] + chunk(b"tEXt", b"Comment\x00provider integration") + png[-12:]
 
 
 def run(
@@ -44,7 +55,7 @@ def main() -> int:
         environment["PATH"] = str(provider_directory) + os.pathsep + environment.get("PATH", "")
 
         source = root / "lossy.png"
-        source_bytes = FIXTURE.read_bytes()
+        source_bytes = with_text_metadata(FIXTURE.read_bytes())
         source.write_bytes(source_bytes)
         output = root / "lossy-out"
         output.mkdir()
@@ -61,6 +72,7 @@ def main() -> int:
                 "optipng-v1",
                 "--require-strategy",
                 "pngquant-v1",
+                "--strip-metadata",
                 "--output",
                 output,
                 source,
@@ -72,6 +84,8 @@ def main() -> int:
         candidate = (output / source.name).read_bytes()
         if len(candidate) >= len(source_bytes) or candidate == source_bytes:
             raise SystemExit("pngquant did not produce the required real lossy reduction")
+        if b"tEXt" in candidate:
+            raise SystemExit("pngquant did not strip PNG metadata")
         if source.read_bytes() != source_bytes or len(list(output.iterdir())) != 1:
             raise SystemExit("pngquant integration changed the source or created extra output")
         stdout = result.stdout.decode(errors="replace")

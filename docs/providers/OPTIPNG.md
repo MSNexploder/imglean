@@ -12,9 +12,17 @@ The adapter invokes:
 optipng -quiet -o2 -out CANDIDATE -- PRIVATE_INPUT
 ```
 
-Optimization level 2 is explicit. The adapter does not pass `-fix`, `-strip`, an
-interlace conversion, or an in-place destination, so error repair, metadata
-stripping, forced interlace changes, and source replacement are not requested.
+With `--strip-metadata`, it invokes:
+
+```text
+optipng -quiet -o2 -strip all -out CANDIDATE -- PRIVATE_INPUT
+```
+
+Optimization level 2 is explicit. The adapter never passes `-fix`, an
+interlace conversion, or an in-place destination, so error repair, forced
+interlace changes, and source replacement are not requested. Metadata stripping
+is disabled by default and delegated to OptiPNG's native `-strip all` behavior
+when requested.
 ImgLean validates the private source before invocation and independently applies
 its bounded candidate gate afterward.
 

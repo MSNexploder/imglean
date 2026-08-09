@@ -43,6 +43,28 @@ quality score. The controller does not compare pixels or measure perceptual
 quality. Baseline participation guarantees only that a successful selected file
 is no larger than the source.
 
+## Metadata mapping
+
+`--strip-metadata` allows metadata removal and requests it through a provider's
+native control when available. It never excludes an otherwise-applicable
+strategy. The mapping is part of each versioned adapter:
+
+- OxiPNG selects `StripChunks::Safe` instead of `StripChunks::None`.
+- OptiPNG adds `-strip all`.
+- pngquant already always receives `--strip`, so the flag does not change its
+  command.
+- jpegtran changes `-copy all` to `-copy none`.
+- MozJPEG preserves saved JPEG application markers and exposes no compatible
+  native removal control; it remains applicable and the flag adds no argument.
+- Jpegli's decode/re-encode path does not copy source application markers; the
+  flag adds no command argument.
+
+This is deliberately provider-native and best effort. The controller does not
+strip metadata itself, compare ancillary payloads, or verify that a provider
+removed every metadata form it may understand. The unchanged baseline remains
+eligible and can win, so successful execution with this flag does not guarantee
+a metadata-free output.
+
 ## Integration and execution boundary
 
 Integration form is evaluated in the order embedded, linked, then callable.
@@ -112,7 +134,9 @@ on each release target. Separate jobs build pinned representative OptiPNG,
 pngquant, MozJPEG, libjpeg-turbo jpegtran, and Jpegli sources and require a real
 reduction through discovery and the full controller path. Unit tests cover
 absence, bad identity, required failure, process failure, timeout, malformed
-output, larger output, quality mapping, and baseline fallback.
+output, larger output, quality and metadata mappings, and baseline fallback.
+Real-provider tests use metadata-bearing inputs and exercise both jpegtran
+marker preservation by default and provider-native stripping when requested.
 
 Exact bounds are in [LIMITS.md](LIMITS.md). The registry is an explicit product
 surface, not a general executable plugin mechanism.

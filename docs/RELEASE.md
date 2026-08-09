@@ -86,7 +86,7 @@ Each platform archive contains:
 - the release-input manifest; and
 - SHA-256 checksums.
 
-The manifest records stable strategy order, identifiers, quality policy, worker
+The manifest records stable strategy order, identifiers, quality and metadata policies, worker
 limits, embedded settings, external-provider capability contracts, invocation
 arguments, representative CI revisions, and exact bundled OxiPNG, libdeflater,
 and Zopfli dependency versions. External OptiPNG, pngquant, jpegtran, MozJPEG,

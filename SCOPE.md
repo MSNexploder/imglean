@@ -69,8 +69,8 @@ The ordered, format-specific registry is:
 2. OxiPNG 10.1.1 with pinned Zopfli settings, embedded;
 3. OptiPNG at optimization level 2, external and optional;
 4. pngquant at numeric quality, external and optional;
-5. jpegtran with marker copying, Huffman optimization, and progressive output,
-   external and optional;
+5. jpegtran with configurable native marker copying, Huffman optimization, and
+   progressive output, external and optional;
 6. MozJPEG at numeric quality, external and optional; and
 7. Jpegli at numeric quality, external and optional.
 
@@ -80,6 +80,13 @@ lossless strategies remain applicable at numeric quality. `pngquant-v1`,
 `Q` maps to each provider's native quality control; pngquant receives `0-Q`,
 while MozJPEG and Jpegli receive `Q`. ImgLean does not emulate lossy
 transformations or independently score quality.
+
+`--strip-metadata` allows metadata removal and requests native removal behavior
+where a strategy exposes it. It does not exclude an otherwise-applicable
+strategy that lacks such a control. ImgLean does not transform the source
+baseline, implement a controller-side stripper, or independently verify that
+metadata was removed. Because the baseline remains eligible and can win, the
+option is explicitly best effort and does not guarantee a metadata-free output.
 
 Both embedded strategies are enabled by default. External providers are
 discovered on `PATH` or supplied with `--provider NAME PATH` on every platform.

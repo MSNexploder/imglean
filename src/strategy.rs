@@ -140,10 +140,11 @@ impl ProviderId {
 
     const fn capability_markers(self) -> &'static [&'static str] {
         match self {
-            Self::Optipng => &["optipng", "[options]"],
-            Self::Pngquant => &["pngquant", "--quality"],
+            Self::Optipng => &["optipng", "[options]", "-strip"],
+            Self::Pngquant => &["pngquant", "--quality", "--strip"],
             Self::Jpegtran => &[
                 "usage:",
+                "-copy none",
                 "-copy all",
                 "-optimize",
                 "-progressive",
@@ -197,6 +198,7 @@ pub struct Selection {
     pub provider_paths: Vec<ProviderPath>,
     pub quality: Quality,
     pub timeout: Duration,
+    pub strip_metadata: bool,
 }
 
 impl Default for Selection {
@@ -207,6 +209,7 @@ impl Default for Selection {
             provider_paths: Vec::new(),
             quality: Quality::default(),
             timeout: DEFAULT_STRATEGY_TIMEOUT,
+            strip_metadata: false,
         }
     }
 }
@@ -472,16 +475,49 @@ mod tests {
         }
     }
 
+    #[test]
+    fn metadata_stripping_keeps_strategies_without_a_native_control_applicable() {
+        let selection = Selection {
+            quality: Quality::Numeric(80),
+            strip_metadata: true,
+            disabled: vec![
+                StrategyId::OptipngV1,
+                StrategyId::PngquantV1,
+                StrategyId::JpegtranV1,
+                StrategyId::JpegliV1,
+            ],
+            ..Selection::default()
+        };
+        let registry = resolve(&selection).unwrap();
+        assert!(
+            !matches!(
+                registry
+                    .iter()
+                    .find(|entry| entry.id == StrategyId::MozjpegV1)
+                    .unwrap()
+                    .state,
+                RegistryState::NotApplicable
+            ),
+            "MozJPEG should remain eligible when metadata stripping is requested"
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn every_configured_provider_is_accepted_by_capability_not_version() {
         let directory = test_directory();
         let fixtures = [
-            (ProviderId::Optipng, "optipng [options] future release"),
-            (ProviderId::Pngquant, "pngquant --quality future release"),
+            (
+                ProviderId::Optipng,
+                "optipng [options] -strip future release",
+            ),
+            (
+                ProviderId::Pngquant,
+                "pngquant --quality --strip future release",
+            ),
             (
                 ProviderId::Jpegtran,
-                "usage: provider -copy all -optimize -progressive -outfile -strict",
+                "usage: provider -copy none -copy all -optimize -progressive -outfile -strict",
             ),
             (
                 ProviderId::Mozjpeg,
@@ -517,6 +553,7 @@ mod tests {
                     .map(ProviderId::strategy)
                     .collect(),
                 timeout: DEFAULT_STRATEGY_TIMEOUT,
+                strip_metadata: false,
             };
             let registry = resolve(&selection).unwrap();
             assert_eq!(

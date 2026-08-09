@@ -70,6 +70,40 @@ def main() -> int:
             raise SystemExit("jpegtran winner diagnostics are missing")
         if "using jpegtran-v1 provider at" not in completed.stderr:
             raise SystemExit("jpegtran capability discovery diagnostics are missing")
+
+        stripped_source = directory / "stripped.jpg"
+        stripped_output = directory / "stripped-output"
+        stripped_output.mkdir()
+        stripped_source.write_bytes(original)
+        stripped = subprocess.run(
+            [
+                binary,
+                "--provider",
+                "jpegtran",
+                provider,
+                "--strip-metadata",
+                "--output",
+                stripped_output,
+                stripped_source,
+            ],
+            cwd=ROOT,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if stripped.returncode != 0:
+            raise SystemExit(
+                f"jpegtran metadata stripping failed ({stripped.returncode})\n"
+                f"stdout:\n{stripped.stdout}\nstderr:\n{stripped.stderr}"
+            )
+        stripped_candidate = stripped_output / stripped_source.name
+        if exif_segment in stripped_candidate.read_bytes():
+            raise SystemExit("jpegtran did not strip the source Exif marker")
+        if stripped_source.read_bytes() != original:
+            raise SystemExit("jpegtran metadata stripping changed the source")
+        if "-> jpegtran-v1" not in stripped.stdout:
+            raise SystemExit("jpegtran metadata-stripping winner diagnostics are missing")
     return 0
 
 

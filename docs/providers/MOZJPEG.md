@@ -21,10 +21,11 @@ Huffman coding, and strict warning handling are explicit. The controller then
 applies the common JPEG candidate gate and keeps the result only when it is
 strictly smaller than the current winner.
 
-The CLI re-encodes image samples and does not promise to preserve Exif
-orientation or other application metadata. Version 0.6 deliberately treats
-that metadata as opaque and permits this behavior only after the user selects
-numeric JPEG quality.
+The CLI's JPEG-input path re-encodes image samples and copies saved application
+markers, including Exif, without exposing a compatible marker-removal option.
+`--strip-metadata` therefore adds no MozJPEG argument, and `mozjpeg-v1` remains
+applicable. CI verifies that it runs and retains a source Exif marker under this
+best-effort policy.
 
 MozJPEG exposes a libjpeg-compatible native library and recommends linking for
 graphics applications. ImgLean deliberately uses its CLI because the current

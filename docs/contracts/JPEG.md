@@ -36,10 +36,12 @@ or perceptual quality. Numeric-quality transformations are trusted to the
 explicit provider adapter. The validated source remains the baseline, so a
 larger candidate never wins.
 
-The lossless jpegtran adapter copies all extra markers and transcodes existing
-JPEG coefficients without requantization. CI verifies retention of an Exif
-marker, while the common candidate gate intentionally does not parse or compare
-Exif payloads. Numeric-quality JPEG adapters may drop application metadata.
+The lossless jpegtran adapter copies all extra markers by default and
+transcodes existing JPEG coefficients without requantization. With
+`--strip-metadata`, it instead requests no extra-marker copying. Numeric-quality
+JPEG adapters re-encode and may drop application metadata. CI exercises these
+native behaviors with an Exif-bearing input, while the common candidate gate
+intentionally does not parse, compare, or verify removal of Exif payloads.
 
 ## Bounded validation
 

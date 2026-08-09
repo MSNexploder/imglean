@@ -11,6 +11,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests/corpus/jpeg/v1/accepted/provider-reduction.jpg"
+EXIF = (
+    b"Exif\x00\x00II*\x00\x08\x00\x00\x00\x01\x00"
+    b"\x12\x01\x03\x00\x01\x00\x00\x00\x06\x00\x00\x00\x00\x00\x00\x00"
+)
+
+
+def with_exif(jpeg: bytes) -> tuple[bytes, bytes]:
+    segment = b"\xff\xe1" + (len(EXIF) + 2).to_bytes(2, "big") + EXIF
+    return jpeg[:2] + segment + jpeg[2:], segment
 
 
 def main() -> int:
@@ -29,8 +38,8 @@ def main() -> int:
         source = directory / "source.jpg"
         output = directory / "output"
         output.mkdir()
-        source.write_bytes(FIXTURE.read_bytes())
-        original = source.read_bytes()
+        original, exif_segment = with_exif(FIXTURE.read_bytes())
+        source.write_bytes(original)
 
         completed = subprocess.run(
             [
@@ -42,6 +51,7 @@ def main() -> int:
                 provider,
                 "--disable-strategy",
                 other,
+                "--strip-metadata",
                 "--output",
                 output,
                 source,
@@ -60,12 +70,18 @@ def main() -> int:
         candidate = output / source.name
         if not candidate.is_file() or candidate.stat().st_size >= len(original):
             raise SystemExit(f"{args.name} did not produce the required real size reduction")
+        candidate_bytes = candidate.read_bytes()
+        if args.name == "mozjpeg" and exif_segment not in candidate_bytes:
+            raise SystemExit("MozJPEG did not preserve the source Exif marker")
+        if args.name == "jpegli" and exif_segment in candidate_bytes:
+            raise SystemExit("Jpegli did not strip the source Exif marker")
         if source.read_bytes() != original or sorted(output.iterdir()) != [candidate]:
             raise SystemExit(f"{args.name} integration changed the source or created extra output")
         if f"-> {strategy}" not in completed.stdout:
             raise SystemExit(f"{args.name} winner diagnostics are missing")
         if f"using {strategy} provider at" not in completed.stderr:
             raise SystemExit(f"{args.name} capability discovery diagnostics are missing")
+
     return 0
 
 

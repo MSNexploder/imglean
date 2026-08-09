@@ -17,7 +17,9 @@ This mapping uses pngquant's native 1–100 scale: lower values permit stronger
 color reduction and higher values request higher fidelity. Even quality 100 can
 reduce an image to a palette and is not lossless. `--speed 4` fixes the
 speed/quality tradeoff, and `--strip` intentionally removes optional metadata.
-The baseline and every lossless strategy remain in the race.
+The command is unchanged by `--strip-metadata` because metadata removal is
+already intrinsic to this strategy. The baseline and every lossless strategy
+remain in the race.
 
 ImgLean does not independently score perceptual quality or compare pixels. It
 trusts this audited adapter mapping, then independently enforces the same basic

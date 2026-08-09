@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-pub const LIMITS_VERSION: &str = "v7";
+pub const LIMITS_VERSION: &str = "v8";
 
 pub const MAX_INPUTS: usize = 128;
 pub const MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
