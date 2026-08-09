@@ -20,6 +20,10 @@ impl Artifacts {
         }
     }
 
+    pub fn directory(&self) -> &Path {
+        &self.directory
+    }
+
     pub fn create(&mut self, purpose: &str) -> io::Result<(PathBuf, File)> {
         for _ in 0..128 {
             let path = self.next_path(purpose);

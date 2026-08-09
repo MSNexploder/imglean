@@ -36,7 +36,7 @@ def main() -> int:
     parser.add_argument("--allow-dirty", action="store_true")
     args = parser.parse_args()
     if args.target not in RELEASE_TARGETS:
-        parser.error(f"unsupported version 0.2 release target: {args.target}")
+        parser.error(f"unsupported version 0.3 release target: {args.target}")
 
     required = [
         args.binary,
@@ -173,7 +173,7 @@ def release_manifest(
         if node["id"] in identities
     }
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "package": "imglean",
         "version": tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"],
         "source_commit": run(["git", "rev-parse", "HEAD"]),
@@ -210,6 +210,12 @@ def release_manifest(
                 "arguments": ["-quiet", "-o2", "-out", "CANDIDATE", "--", "INPUT"],
             },
         ],
+        "strategy_workers": {
+            "default_cap": 2,
+            "maximum": 3,
+            "selection": "minimum of available parallelism and default cap",
+        },
+        "limits_version": "v3",
         "build_environment": {
             "platform": platform.platform(),
             "packager": f"Python {platform.python_version()}",
@@ -330,6 +336,8 @@ def smoke_release_binary(binary: Path) -> None:
         source = directory / "source.png"
         output = directory / "output"
         output.mkdir()
+        destination = output / source.name
+        destination.write_bytes(b"existing")
         shutil.copyfile(
             ROOT / "tests/corpus/png/v2/accepted/oxipng-reduction.png",
             source,
@@ -341,7 +349,6 @@ def smoke_release_binary(binary: Path) -> None:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        destination = output / source.name
         if not destination.is_file() or destination.stat().st_size >= source.stat().st_size:
             raise RuntimeError("release executable failed the packaged-workflow smoke test")
 

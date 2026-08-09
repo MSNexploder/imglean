@@ -1,7 +1,7 @@
 # ImgLean Scope
 
 > [!IMPORTANT]
-> Version 0.2 is implemented in source. Target-specific release artifacts remain
+> Version 0.3 is implemented in source. Target-specific release artifacts remain
 > unpublished and unqualified until their native gates pass.
 
 ## Product definition
@@ -33,7 +33,8 @@ the authoritative boundary.
 - Attempt every enabled applicable strategy once for each processed input.
 - Include the source baseline and use stable order to break equal-size ties.
 - Never let a provider select, publish, or overwrite a destination.
-- Publish only a complete validated result and never replace an existing entry.
+- Publish only a complete validated result; replace only the requested regular
+  output entry and never an input alias.
 - Report every input outcome and the invocation outcome.
 - Enable compatible embedded strategies by default.
 - Keep strategy identifiers, order, provider versions, options, and limits
@@ -42,9 +43,9 @@ the authoritative boundary.
 - Require deliberate selection before enabling any future fidelity-reducing
   policy.
 
-## Version 0.2
+## Version 0.3
 
-Version 0.2 supports explicit static PNG inputs and a required separate output
+Version 0.3 supports explicit static PNG inputs and a required separate output
 directory on 64-bit macOS, Linux, and Windows release targets. It accepts every
 standard static PNG color-type and bit-depth combination, including Adam7,
 within documented byte, dimension, pixel, allocation, chunk, and elapsed-time
@@ -69,19 +70,22 @@ supported version is available. Automatic absence or incompatibility is normal;
 an explicitly required or configured provider that is unavailable or
 incompatible fails preflight before output creation. Provider execution failure
 warns, excludes that candidate, and leaves the baseline and other strategies in
-the race.
+the race. Every registered strategy remains visible in per-input reporting as a
+result, disabled, unavailable, or not-run row.
 
 Complete input/output mapping preflight precedes all publication. Inputs are
-then processed independently and sequentially. A later per-input failure does
-not roll back earlier outputs. Publication uses a non-replacing hard link to a
-complete validated temporary file in the output directory.
+then processed independently and sequentially. Enabled strategies for one input
+run through a bounded worker pool; completion order cannot change registry-order
+tie-breaking or reporting. A later per-input failure does not roll back earlier
+outputs. Publication renames a complete validated temporary file within the
+output directory and replaces an existing regular destination when present.
 
 ## Non-goals and future directions
 
-Version 0.2 does not provide directory traversal, standard-input pipelines,
+Version 0.3 does not provide directory traversal, standard-input pipelines,
 in-place operation, lossy optimization, format conversion, APNG processing, a
-general plugin ABI, provider downloads, remote services, or support for output
-filesystems without same-directory hard links. Additional formats, providers,
+general plugin ABI, provider downloads, remote services, transactional rollback,
+or backup creation. Additional formats, providers,
 architectures, and explicit fidelity policies require their own reviewed
 contracts.
 

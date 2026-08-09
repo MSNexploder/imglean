@@ -1,40 +1,74 @@
-# Version 0.2 Output Contract
+# Version 0.3 Output Contract
 
 > [!IMPORTANT]
-> This is the implemented version 0.2 output contract.
+> This is the implemented version 0.3 output contract.
 
 ## Boundary
 
-This document defines the portable output guarantees for version 0.2. It uses common file and hard-link operations rather than an operating-system-specific filesystem backend. It protects normal local CLI operation but does not promise that paths remain bound to the same directories when another process concurrently renames or replaces path components.
+This document defines the portable output guarantees for version 0.3. It uses
+common file creation and the target's same-directory replacing-rename operation
+(`rename` on Unix and `MoveFileExW` with replacement on Windows). It protects
+normal local CLI operation but does not promise that paths remain bound to the
+same directory entries when another process concurrently renames or replaces
+path components.
 
-## Required filesystem behavior
+## Destination preflight
 
-The user supplies an existing output directory. Structural preflight resolves it to an absolute canonical path, verifies that it is a directory, checks the complete destination mapping, and requires every destination pathname to contain no filesystem entry, including a dangling symlink.
+The user supplies an existing output directory. Structural preflight resolves
+it to an absolute canonical path and verifies the complete destination mapping.
+Each destination may be absent or an existing regular non-symlink file.
+Directories, symbolic links, and special files are rejected.
 
-For each processed input, the output directory must support creating a regular temporary file and a second hard link to that file within the same directory. ImgLean does not perform a mutating capability probe during structural preflight. If the required hard-link operation is unsupported or fails, that input fails without an ImgLean-created destination; earlier committed outputs remain valid and later inputs continue.
-
-Version 0.2 does not claim identical behavior on every filesystem, protection against hostile concurrent path manipulation, or support for filesystems without hard links. Release testing covers the documented release targets and representative native filesystems.
+Every existing destination is compared with every retained input using platform
+file identity. Direct source paths and hard-link aliases are rejected before any
+output mutation. These checks are portable normal-operation checks, not a
+race-free adversarial guarantee.
 
 ## Publication guarantee
 
-Each input maps to the validated basename retained from its original command-line argument within the canonical output-directory path. Canonicalizing the source does not change that destination name. ImgLean creates a unique internal file in the output directory using atomic create-new semantics, writes the complete selected bytes, and independently validates the completed file before publication.
+Each input maps to the validated basename retained from its original argument
+inside the canonical output directory. The controller creates a unique internal
+file there with create-new semantics, writes the complete selected bytes, and
+independently validates the completed file.
 
-ImgLean publishes the result by creating the requested destination as a hard link to that internal file. Hard-link creation must fail when any filesystem entry already occupies the destination. ImgLean never implements publication as an existence check followed by an overwriting rename. A destination that appears after structural preflight is therefore not replaced.
+Publication renames that internal file to the requested destination. Because
+both paths are in the same directory, publication does not cross filesystems.
+The operation creates an absent destination or replaces the entry occupying the
+destination at that moment. A destination that appears or changes after
+preflight may therefore be replaced. ImgLean does not follow or modify the
+contents of a destination symlink; it authorizes the requested pathname and does
+not claim protection against hostile concurrent path manipulation.
 
-After successful hard-link creation, the requested destination refers to the complete validated file. ImgLean then removes the internal name. Failure to remove that name after publication does not invalidate the destination, but it is a handled filesystem failure: ImgLean reports it, exits `1`, and does not claim successful cleanup.
+If preparation or rename fails, ImgLean removes its internal file when possible
+and reports a per-input failure. An existing destination remains the applicable
+output unless the rename succeeds. After successful rename, the requested path
+refers to the complete validated winner and the former destination has been
+replaced. No partial candidate is exposed around the publication point.
 
-Hard-link publication is atomic visibility, not crash durability. ImgLean neither controls nor claims knowledge of destination entries created, removed, or changed by other processes after publication.
+Publication is atomic visibility on the qualified target filesystems, not crash
+durability. ImgLean does not create backups, synchronize file or directory data,
+or roll back outputs replaced earlier in the invocation.
 
 ## Internal artifacts and metadata
 
-Internal files use collision-resistant names distinct from every requested destination and are opened with create-new semantics. Their names and permissions are not a confidentiality boundary. Outputs receive the ownership, permissions, access-control entries, timestamps, flags, and other metadata produced by ordinary new-file creation on the current platform and filesystem. ImgLean does not copy or normalize source filesystem metadata.
+Internal files use collision-resistant names distinct from requested
+destinations and are opened with create-new semantics. Their names and
+permissions are not a confidentiality boundary. The controller tracks every
+internal pathname created by the current invocation and removes it after
+handled failure when possible. It never deletes an earlier artifact merely
+because its name resembles an ImgLean temporary name.
 
-The destination hard link refers to the same filesystem object as the prepared internal file and therefore has that object's metadata. Exact metadata can differ across operating systems, filesystems, user configuration, inherited access-control rules, and process umask. Version 0.2 promises only that ImgLean does not intentionally make an output executable or read-only; release tests record observed behavior on supported targets.
-
-The controller tracks every internal pathname created by the current invocation and removes it after handled success or failure when possible. It never deletes an earlier artifact merely because its name resembles an ImgLean temporary name.
+Outputs receive the ownership, permissions, access-control entries, timestamps,
+flags, and other metadata produced by ordinary new-file creation on the current
+platform and filesystem. ImgLean does not copy metadata from the source or the
+replaced destination and does not intentionally make an output executable or
+read-only.
 
 ## Failure boundary
 
-Before successful hard-link creation, ImgLean has not published a requested destination for that input. A write, validation, metadata, hard-link, or pre-publication cleanup failure leaves no ImgLean-created destination and is a per-input failure. A successful hard-link operation exposes the complete winner, never a partially written candidate.
-
-Abnormal termination before publication may leave an internal file but no requested destination. Abnormal termination after publication may leave both the complete destination and its internal hard link. Crash cleanup and crash durability are not promised. Later inputs may continue after an ordinary per-input failure; invocation-wide and required standard-output reporting failures stop later commits as defined by [INPUT_AND_BATCH.md](INPUT_AND_BATCH.md).
+Before successful rename, ImgLean has not changed the requested destination for
+that input. Source validation, provider, preparation, or publication failure
+therefore preserves an existing output. After successful rename, the new output
+remains committed even if required reporting fails or a later input fails.
+Abnormal termination may leave a complete internal file before publication;
+crash cleanup and crash durability are not promised.

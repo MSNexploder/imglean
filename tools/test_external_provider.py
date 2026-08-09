@@ -77,8 +77,42 @@ def main() -> int:
             raise SystemExit("OptiPNG integration changed the source or created extra output")
         stdout = result.stdout.decode(errors="replace")
         stderr = result.stderr.decode(errors="replace")
-        if "winner optipng-v1" not in stdout or "provider version 7.9.1" not in stderr:
+        if "-> optipng-v1" not in stdout or "provider version 7.9.1" not in stderr:
             raise SystemExit("OptiPNG discovery or winner diagnostics are missing")
+
+        all_source = root / "all-strategies.png"
+        all_source.write_bytes(source_bytes)
+        all_output = root / "all-out"
+        all_output.mkdir()
+        all_result = subprocess.run(
+            [
+                binary,
+                "--jobs",
+                "3",
+                "--require-strategy",
+                "optipng-v1",
+                "--output",
+                all_output,
+                all_source,
+            ],
+            check=False,
+            capture_output=True,
+            env=environment,
+        )
+        if all_result.returncode != 0:
+            raise SystemExit(all_result.stderr.decode(errors="replace"))
+        all_stdout = all_result.stdout.decode(errors="replace")
+        for strategy in (
+            "oxipng-libdeflate-v1",
+            "oxipng-zopfli-v1",
+            "optipng-v1",
+        ):
+            if strategy not in all_stdout:
+                raise SystemExit(f"complete registry output is missing {strategy}")
+        if any(state in all_stdout for state in ("disabled", "unavailable", "not run")):
+            raise SystemExit("an available strategy was not executed")
+        if all_source.read_bytes() != source_bytes or not (all_output / all_source.name).is_file():
+            raise SystemExit("combined strategy execution changed its source or missed output")
     return 0
 
 

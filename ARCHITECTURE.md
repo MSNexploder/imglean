@@ -1,7 +1,7 @@
 # ImgLean Architecture
 
 > [!IMPORTANT]
-> This document describes the implemented version 0.2 component boundaries.
+> This document describes the implemented version 0.3 component boundaries.
 
 ## System shape
 
@@ -54,18 +54,21 @@ pixel or ancillary comparison—establishes transformation semantics.
 1. Resolve the strategy registry and preflight every input/output mapping.
 2. Read the already-open input under portable before/after state checks.
 3. Validate the captured source and admit its bytes as the baseline.
-4. In registry order, give each enabled strategy a fresh private copy of those
-   bytes and a reserved absent candidate path.
-5. Supervise the process, bound diagnostics and output, clean its private
-   artifacts, and independently validate any candidate.
+4. Submit enabled strategies in registry order to the bounded per-input worker
+   pool. Each receives a fresh private copy of those bytes and a reserved absent
+   candidate path.
+5. Supervise each process, bound diagnostics and output, clean its separately
+   owned private artifacts, collect every result, and independently validate
+   candidates in registry order.
 6. Replace the current winner only when the candidate is strictly smaller.
 7. Write and revalidate the winner in the output directory, then publish it by
-   non-replacing hard-link creation.
+   same-directory rename, replacing an existing regular destination.
 8. Report the winner and continue with the next input.
 
-The baseline is first, so it wins equal-size ties. Sequential execution makes
-completion order identical to stable registry order and keeps one provider
-process active at a time.
+The baseline is first, so it wins equal-size ties. Worker completion order is
+discarded before validation and selection; stable registry order remains the
+only strategy tie-breaker. Inputs, winner publication, and reporting remain
+sequential even though multiple provider processes may run for one input.
 
 ## Failure and trust boundaries
 
@@ -85,9 +88,10 @@ resource containment.
 ## Output and determinism
 
 The original validated basename maps into one required canonical output
-directory. The controller never writes a source or replaces a destination. It
-publishes only a complete revalidated temporary file through a same-directory
-hard link. Outputs receive ordinary new-file filesystem metadata.
+directory. The controller never writes a source or permits an output to alias an
+input. It publishes only a complete revalidated temporary file through a
+same-directory replacing rename. Outputs receive ordinary new-file filesystem
+metadata rather than metadata copied from the replaced destination.
 
 Given the same accepted candidate set, encoded sizes and fixed registry order
 fully determine the winner. Provider failures and timeouts may alter that set

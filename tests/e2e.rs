@@ -27,8 +27,10 @@ fn complete_worker_race_publishes_a_smaller_valid_result() {
     let after = fs::metadata(&source).unwrap();
     assert_eq!(before.len(), after.len());
     assert_eq!(before.modified().unwrap(), after.modified().unwrap());
-    assert!(stdout(&result).contains("ok "));
-    assert!(stderr(&result).contains("1 succeeded, 0 failed"));
+    assert!(stdout(&result).contains("photo.png\n"));
+    assert!(stdout(&result).contains("-> oxipng-"));
+    assert!(stdout(&result).contains("winner; saved"));
+    assert!(stderr(&result).contains("Summary: 1 succeeded"));
     assert_eq!(fs::read_dir(&output_directory).unwrap().count(), 1);
 }
 
@@ -40,18 +42,24 @@ fn invalid_source_does_not_prevent_a_later_valid_input() {
     let valid = directory.path.join("good.png");
     fs::write(&invalid, b"not a PNG").unwrap();
     fs::write(&valid, compressible_png()).unwrap();
+    fs::write(output_directory.join("bad.png"), b"existing").unwrap();
 
     let result = run(&output_directory, &[&invalid, &valid]);
     assert_eq!(result.status.code(), Some(1));
-    assert!(!output_directory.join("bad.png").exists());
+    assert_eq!(
+        fs::read(output_directory.join("bad.png")).unwrap(),
+        b"existing"
+    );
     assert!(output_directory.join("good.png").exists());
-    assert!(stdout(&result).contains("failed "));
-    assert!(stdout(&result).contains("ok "));
-    assert!(stderr(&result).contains("1 succeeded, 1 failed"));
+    assert!(stdout(&result).contains("bad.png\n"));
+    assert!(stdout(&result).contains("oxipng-libdeflate-v1     not run"));
+    assert!(stdout(&result).contains("  !! failed"));
+    assert!(stdout(&result).contains("good.png\n"));
+    assert!(stderr(&result).contains("Summary: 1 succeeded, 1 failed"));
 }
 
 #[test]
-fn structural_destination_failure_aborts_the_complete_batch() {
+fn existing_destinations_are_replaced() {
     let directory = TestDirectory::new();
     let output_directory = directory.create_directory("out");
     let first = directory.path.join("first.png");
@@ -61,12 +69,28 @@ fn structural_destination_failure_aborts_the_complete_batch() {
     fs::write(output_directory.join("first.png"), b"existing").unwrap();
 
     let result = run(&output_directory, &[&first, &second]);
-    assert_eq!(result.status.code(), Some(1));
-    assert!(result.stdout.is_empty());
-    assert_eq!(
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    assert_ne!(
         fs::read(output_directory.join("first.png")).unwrap(),
         b"existing"
     );
+    assert!(output_directory.join("second.png").exists());
+}
+
+#[test]
+fn non_regular_destination_aborts_the_complete_batch() {
+    let directory = TestDirectory::new();
+    let output_directory = directory.create_directory("out");
+    let first = directory.path.join("first.png");
+    let second = directory.path.join("second.png");
+    fs::write(&first, compressible_png()).unwrap();
+    fs::write(&second, compressible_png()).unwrap();
+    fs::create_dir(output_directory.join("first.png")).unwrap();
+
+    let result = run(&output_directory, &[&first, &second]);
+    assert_eq!(result.status.code(), Some(1));
+    assert!(result.stdout.is_empty());
+    assert!(output_directory.join("first.png").is_dir());
     assert!(!output_directory.join("second.png").exists());
     assert!(stderr(&result).contains("structural preflight failed"));
 }

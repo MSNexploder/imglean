@@ -85,6 +85,19 @@ pub struct Strategy {
     pub execution: Execution,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RegistryEntry {
+    pub id: StrategyId,
+    pub state: RegistryState,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RegistryState {
+    Runnable(Execution),
+    Disabled,
+    Unavailable,
+}
+
 impl fmt::Display for Strategy {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.id.fmt(formatter)
@@ -111,18 +124,23 @@ impl DiscoveryError {
     }
 }
 
-pub fn resolve(selection: &Selection) -> Result<Vec<Strategy>, DiscoveryError> {
-    let mut strategies = StrategyId::EMBEDDED
+pub fn resolve(selection: &Selection) -> Result<Vec<RegistryEntry>, DiscoveryError> {
+    let mut registry = StrategyId::EMBEDDED
         .into_iter()
-        .filter(|id| !selection.disabled.contains(id))
-        .map(|id| Strategy {
+        .map(|id| RegistryEntry {
             id,
-            execution: Execution::Embedded,
+            state: if selection.disabled.contains(&id) {
+                RegistryState::Disabled
+            } else {
+                RegistryState::Runnable(Execution::Embedded)
+            },
         })
         .collect::<Vec<_>>();
 
     let optipng_id = StrategyId::OptipngV1;
-    if !selection.disabled.contains(&optipng_id) {
+    let optipng_state = if selection.disabled.contains(&optipng_id) {
+        RegistryState::Disabled
+    } else {
         let configured = selection
             .provider_paths
             .iter()
@@ -130,24 +148,28 @@ pub fn resolve(selection: &Selection) -> Result<Vec<Strategy>, DiscoveryError> {
             .map(|path| path.path.as_path());
         let required = selection.required.contains(&optipng_id);
         match discover_optipng(configured) {
-            Ok(Some(execution)) => strategies.push(Strategy {
-                id: optipng_id,
-                execution,
-            }),
+            Ok(Some(execution)) => RegistryState::Runnable(execution),
             Ok(None) if required => {
                 return discovery("required strategy optipng-v1 is unavailable");
             }
             Err(error) if required => return Err(error),
-            Ok(None) | Err(_) => {}
+            Ok(None) | Err(_) => RegistryState::Unavailable,
         }
-    }
+    };
+    registry.push(RegistryEntry {
+        id: optipng_id,
+        state: optipng_state,
+    });
 
     for required in &selection.required {
-        if !strategies.iter().any(|strategy| strategy.id == *required) {
+        if !registry
+            .iter()
+            .any(|entry| entry.id == *required && matches!(entry.state, RegistryState::Runnable(_)))
+        {
             return discovery(&format!("required strategy {required} is unavailable"));
         }
     }
-    Ok(strategies)
+    Ok(registry)
 }
 
 fn discover_optipng(configured: Option<&Path>) -> Result<Option<Execution>, DiscoveryError> {
@@ -286,13 +308,23 @@ mod tests {
             disabled: vec![StrategyId::OxipngZopfliV1, StrategyId::OptipngV1],
             ..Selection::default()
         };
-        let strategies = resolve(&selection).unwrap();
+        let registry = resolve(&selection).unwrap();
         assert_eq!(
-            strategies,
-            [Strategy {
-                id: StrategyId::OxipngLibdeflateV1,
-                execution: Execution::Embedded,
-            }]
+            registry,
+            [
+                RegistryEntry {
+                    id: StrategyId::OxipngLibdeflateV1,
+                    state: RegistryState::Runnable(Execution::Embedded),
+                },
+                RegistryEntry {
+                    id: StrategyId::OxipngZopfliV1,
+                    state: RegistryState::Disabled,
+                },
+                RegistryEntry {
+                    id: StrategyId::OptipngV1,
+                    state: RegistryState::Disabled,
+                },
+            ]
         );
     }
 
@@ -314,15 +346,15 @@ mod tests {
             ..Selection::default()
         };
 
-        let strategies = resolve(&selection).unwrap();
-        assert_eq!(strategies.len(), 3);
-        assert_eq!(strategies[2].id, StrategyId::OptipngV1);
+        let registry = resolve(&selection).unwrap();
+        assert_eq!(registry.len(), 3);
+        assert_eq!(registry[2].id, StrategyId::OptipngV1);
         assert_eq!(
-            strategies[2].execution,
-            Execution::External {
+            registry[2].state,
+            RegistryState::Runnable(Execution::External {
                 executable: fs::canonicalize(executable).unwrap(),
                 version: "7.9.1".to_owned(),
-            }
+            })
         );
         fs::remove_dir_all(directory).unwrap();
     }
@@ -344,7 +376,10 @@ mod tests {
             provider_paths: vec![configured.clone()],
             ..Selection::default()
         };
-        assert_eq!(resolve(&optional).unwrap().len(), 2);
+        assert_eq!(
+            resolve(&optional).unwrap()[2].state,
+            RegistryState::Unavailable
+        );
 
         let required = Selection {
             required: vec![StrategyId::OptipngV1],

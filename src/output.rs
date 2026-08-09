@@ -14,7 +14,6 @@ pub struct PreparedOutput {
 #[derive(Debug, Eq, PartialEq)]
 pub enum OutputError {
     BeforePublication(&'static str),
-    AfterPublication(&'static str),
 }
 
 pub fn prepare(
@@ -100,19 +99,57 @@ fn read_completed(path: &Path) -> Result<Vec<u8>, OutputError> {
 }
 
 trait PublishOps {
-    fn hard_link(&self, source: &Path, destination: &Path) -> io::Result<()>;
+    fn rename(&self, source: &Path, destination: &Path) -> io::Result<()>;
     fn remove_file(&self, path: &Path) -> io::Result<()>;
 }
 
 struct RealPublishOps;
 
 impl PublishOps for RealPublishOps {
-    fn hard_link(&self, source: &Path, destination: &Path) -> io::Result<()> {
-        fs::hard_link(source, destination)
+    fn rename(&self, source: &Path, destination: &Path) -> io::Result<()> {
+        replace(source, destination)
     }
 
     fn remove_file(&self, path: &Path) -> io::Result<()> {
         fs::remove_file(path)
+    }
+}
+
+#[cfg(not(windows))]
+fn replace(source: &Path, destination: &Path) -> io::Result<()> {
+    fs::rename(source, destination)
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn replace(source: &Path, destination: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt as _;
+    use windows_sys::Win32::Storage::FileSystem::{MOVEFILE_REPLACE_EXISTING, MoveFileExW};
+
+    let source = source
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let destination = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+
+    // SAFETY: Both pointers refer to live, NUL-terminated UTF-16 buffers for
+    // the duration of the call. MoveFileExW only reads those buffers.
+    if unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING,
+        )
+    } == 0
+    {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
     }
 }
 
@@ -122,20 +159,15 @@ fn publish_with_ops(
     destination: &Path,
     operations: &impl PublishOps,
 ) -> Result<(), OutputError> {
-    if operations.hard_link(&prepared.path, destination).is_err() {
+    if operations.rename(&prepared.path, destination).is_err() {
         if operations.remove_file(&prepared.path).is_ok() {
             artifacts.forget(&prepared.path);
             return Err(OutputError::BeforePublication(
-                "cannot publish the destination with a non-replacing hard link",
+                "cannot replace the destination with the completed output",
             ));
         }
         return Err(OutputError::BeforePublication(
             "publication failed and the internal output could not be cleaned",
-        ));
-    }
-    if operations.remove_file(&prepared.path).is_err() {
-        return Err(OutputError::AfterPublication(
-            "the destination was published but the internal output could not be removed",
         ));
     }
     artifacts.forget(&prepared.path);
@@ -144,7 +176,6 @@ fn publish_with_ops(
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
     use std::io::Write as _;
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -173,65 +204,37 @@ mod tests {
     }
 
     #[test]
-    fn destination_appearance_is_never_replaced() {
+    fn existing_destination_is_replaced() {
         let directory = test_directory();
         let destination = directory.join("output.png");
         let bytes = valid_png();
         let source = validate_source(&bytes).unwrap();
         let mut artifacts = Artifacts::new(directory.clone());
         let prepared = prepare(&mut artifacts, &source, &bytes).unwrap();
-        fs::write(&destination, b"racer").unwrap();
-        assert_eq!(
-            publish(&mut artifacts, prepared, &destination),
-            Err(OutputError::BeforePublication(
-                "cannot publish the destination with a non-replacing hard link"
-            ))
-        );
-        assert_eq!(fs::read(&destination).unwrap(), b"racer");
-        fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn post_publication_cleanup_failure_preserves_destination() {
-        let directory = test_directory();
-        let destination = directory.join("output.png");
-        let bytes = valid_png();
-        let source = validate_source(&bytes).unwrap();
-        let mut artifacts = Artifacts::new(directory.clone());
-        let prepared = prepare(&mut artifacts, &source, &bytes).unwrap();
-        let operations = FailingRemoveOps {
-            remove_called: Cell::new(false),
-        };
-        assert_eq!(
-            publish_with_ops(&mut artifacts, prepared, &destination, &operations),
-            Err(OutputError::AfterPublication(
-                "the destination was published but the internal output could not be removed"
-            ))
-        );
+        fs::write(&destination, b"existing").unwrap();
+        publish(&mut artifacts, prepared, &destination).unwrap();
         assert_eq!(fs::read(&destination).unwrap(), bytes);
-        assert!(operations.remove_called.get());
-        drop(artifacts);
         assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
         fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
-    fn unsupported_hard_links_leave_no_destination_or_internal_file() {
+    fn publication_failure_preserves_destination_and_cleans_internal_file() {
         let directory = test_directory();
         let destination = directory.join("output.png");
+        fs::write(&destination, b"existing").unwrap();
         let bytes = valid_png();
         let source = validate_source(&bytes).unwrap();
         let mut artifacts = Artifacts::new(directory.clone());
         let prepared = prepare(&mut artifacts, &source, &bytes).unwrap();
-
         assert_eq!(
-            publish_with_ops(&mut artifacts, prepared, &destination, &UnsupportedLinkOps),
+            publish_with_ops(&mut artifacts, prepared, &destination, &FailingRenameOps),
             Err(OutputError::BeforePublication(
-                "cannot publish the destination with a non-replacing hard link"
+                "cannot replace the destination with the completed output"
             ))
         );
-        assert!(!destination.exists());
-        assert_eq!(fs::read_dir(&directory).unwrap().count(), 0);
+        assert_eq!(fs::read(&destination).unwrap(), b"existing");
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -266,33 +269,18 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
-    struct FailingRemoveOps {
-        remove_called: Cell<bool>,
-    }
+    struct FailingRenameOps;
 
-    struct UnsupportedLinkOps;
-
-    impl PublishOps for UnsupportedLinkOps {
-        fn hard_link(&self, _source: &Path, _destination: &Path) -> io::Result<()> {
+    impl PublishOps for FailingRenameOps {
+        fn rename(&self, _source: &Path, _destination: &Path) -> io::Result<()> {
             Err(io::Error::new(
                 io::ErrorKind::Unsupported,
-                "injected unsupported hard link",
+                "injected rename failure",
             ))
         }
 
         fn remove_file(&self, path: &Path) -> io::Result<()> {
             fs::remove_file(path)
-        }
-    }
-
-    impl PublishOps for FailingRemoveOps {
-        fn hard_link(&self, source: &Path, destination: &Path) -> io::Result<()> {
-            fs::hard_link(source, destination)
-        }
-
-        fn remove_file(&self, _path: &Path) -> io::Result<()> {
-            self.remove_called.set(true);
-            Err(io::Error::other("injected cleanup failure"))
         }
     }
 

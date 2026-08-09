@@ -1,4 +1,4 @@
-# Version 0.2 Provider Execution Contract
+# Version 0.3 Provider Execution Contract
 
 > [!IMPORTANT]
 > Provider revisions, strategy identifiers, options, and limits are versioned
@@ -16,6 +16,12 @@ removes a strategy. `--require-strategy ID` requires it to resolve during
 preflight. `--provider optipng PATH` selects that executable and implicitly
 requires `optipng-v1`. Duplicate, unknown, or disabled-and-required controls are
 usage errors.
+
+Resolution retains one entry for every stable strategy. Runnable entries are
+submitted to the worker pool; disabled and unavailable entries are not run and
+do not warn. Per-input reporting always follows registry order and includes all
+three states. Optional discovery failure remains normal, while a required or
+configured unavailable provider still fails structural preflight.
 
 ## Execution boundary
 
@@ -41,8 +47,9 @@ configured path when present; otherwise it searches `PATH` for `optipng` (or
 `-version` under the discovery deadline, and requires the exact supported
 version. The resolved path and reported version are retained and reported once.
 
-Automatic absence, a failed probe, or incompatibility skips the optional
-strategy. The same condition fails preflight when the user required or
+Automatic absence, a failed probe, or incompatibility marks the optional
+strategy unavailable without running it. The same condition fails preflight
+when the user required or
 configured it. ImgLean never searches again during the invocation and never
 downloads, installs, updates, or repairs provider software.
 
@@ -52,6 +59,12 @@ Standard input is null. Standard output and error are drained concurrently,
 bounded independently, and escaped before diagnostics. The controller polls the
 process deadline, kills and reaps an overdue process, and cleans only private
 artifacts tracked for the current invocation.
+
+For one input, ImgLean runs up to the selected `--jobs` count concurrently.
+Every worker owns a separate artifact tracker. Results are collected completely
+and reordered by registry position before candidate validation, winner
+selection, and reporting. A fatal strategy result fails the input after all
+bounded work is collected; it cannot make another strategy's result disappear.
 
 Start failure, nonzero or abnormal exit, timeout, excessive diagnostics,
 unreadable or oversized output, or candidate rejection produces one strategy
@@ -67,9 +80,10 @@ limits; no portable hard provider address-space limit is claimed.
 
 ## Coverage contract
 
-Registry tests enumerate every stable strategy ID and prove one ordered attempt
-per applicable strategy, baseline fallback, warning continuation, deterministic
-winner selection, and equal-size tie behavior. Every embedded strategy runs
+Registry tests enumerate every stable strategy ID and prove one attempt per
+applicable strategy, explicit disabled and unavailable states, bounded worker
+concurrency, baseline fallback, warning continuation, deterministic winner
+selection, and equal-size tie behavior. Every embedded strategy runs
 directly and through native controller tests. External tests cover absence,
 required/configured failure, incompatible versions, process failures, bounded
 diagnostics, missing and invalid candidates, larger candidates, and process

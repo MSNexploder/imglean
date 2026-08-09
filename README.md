@@ -3,16 +3,18 @@
 ImgLean is a local CLI that runs every applicable PNG optimization strategy and
 writes the smallest candidate that passes its bounded validation gate. The
 validated source is always the first candidate, so a successful output is never
-larger than its source. Sources and existing destinations are never replaced.
+larger than its source. Sources are never replaced; existing regular output
+files are replaced only after the new result is complete and validated.
 
-Version 0.2 is implemented in source. Target-specific 64-bit macOS, Linux, and
+Version 0.3 is implemented in source. Target-specific 64-bit macOS, Linux, and
 Windows artifacts remain unpublished and unqualified until their native release
 gates pass.
 
 ## Use
 
-The output directory must already exist, support same-directory hard links, and
-not contain a requested destination:
+The output directory must already exist. Requested destinations may be absent or
+existing regular files; directories, symbolic links, special files, and input
+aliases are rejected:
 
 ```sh
 imglean --output ./optimized photo.png icon.png
@@ -25,20 +27,21 @@ The default ordered strategy set is:
 3. external `optipng-v1` when OptiPNG 7.9.1 is found on `PATH`.
 
 All compatible embedded strategies are enabled by default. An automatically
-missing or incompatible external provider is skipped. Strategy controls are
-explicit and repeatable:
+missing or incompatible external provider remains visible as `unavailable` but
+is not run. Strategy controls are explicit and repeatable:
 
 ```sh
 imglean --disable-strategy oxipng-zopfli-v1 --output ./optimized photo.png
 imglean --require-strategy optipng-v1 --output ./optimized photo.png
 imglean --provider optipng /absolute/path/to/optipng --output ./optimized photo.png
+imglean --jobs 1 --output ./optimized photo.png
 ```
 
 `--provider` both selects the executable and requires its adapter. ImgLean never
 downloads, installs, or updates external providers. Run `imglean --help` for the
 complete CLI surface.
 
-Version 0.2 accepts bounded static PNGs in every standard color-type and
+Version 0.3 accepts bounded static PNGs in every standard color-type and
 bit-depth combination, including Adam7. It verifies container checksums and a
 complete decode, requires candidate dimensions to match, and refuses APNG,
 `caBX`, and XMP in PNG text chunks. Other accepted ancillary data is opaque.
@@ -49,8 +52,25 @@ See the [PNG contract](docs/contracts/PNG.md) for the exact boundary.
 Exit statuses are `0` for clean success, `3` when all outputs succeed despite
 an optimizer warning, `1` for processing or reporting failure, and `2` for
 invalid CLI usage. Per-input results, including the winning strategy, go to
-standard output. Provider records, warnings, errors, and the invocation summary
-go to standard error.
+standard output. Each block lists the complete strategy registry; `->` marks
+the winner, `!` marks a warning or rejected candidate, and strategies that were
+disabled, unavailable, or not run retain explicit rows:
+
+```text
+photo.png
+     baseline                 109,592 bytes
+     oxipng-libdeflate-v1     109,104 bytes
+  -> oxipng-zopfli-v1         108,928 bytes  winner; saved 664 bytes (0.61%)
+     optipng-v1               unavailable
+     output                   /path/to/optimized/photo.png
+```
+
+Strategy warnings remain inside the relevant image block. Provider records,
+failure details, and the compact invocation summary go to standard error.
+Inputs are processed sequentially. For each input, ImgLean runs up to two
+strategy workers concurrently by default when the machine exposes at least two
+CPUs. `--jobs N` selects one to three workers; reporting and tie-breaking always
+follow registry order rather than completion order.
 
 ## Build and validate
 
@@ -71,7 +91,7 @@ exercise automatic discovery, and require a real external-provider reduction.
 
 ## Documentation
 
-- [SCOPE.md](SCOPE.md) defines the product and version 0.2 boundary.
+- [SCOPE.md](SCOPE.md) defines the product and version 0.3 boundary.
 - [ARCHITECTURE.md](ARCHITECTURE.md) defines components and data flow.
 - The [input](docs/contracts/INPUT_AND_BATCH.md),
   [PNG](docs/contracts/PNG.md),

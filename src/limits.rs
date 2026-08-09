@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-pub const LIMITS_VERSION: &str = "v2";
+pub const LIMITS_VERSION: &str = "v3";
 
 pub const MAX_INPUTS: usize = 128;
 pub const MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
@@ -8,6 +8,8 @@ pub const MAX_AGGREGATE_SOURCE_BYTES: u64 = 512 * 1024 * 1024;
 pub const MAX_CANDIDATE_BYTES: u64 = 128 * 1024 * 1024;
 pub const MAX_TEMPORARY_BYTES: u64 = 256 * 1024 * 1024;
 pub const MAX_DIAGNOSTIC_BYTES: usize = 64 * 1024;
+pub const DEFAULT_STRATEGY_WORKERS: usize = 2;
+pub const MAX_STRATEGY_WORKERS: usize = 3;
 
 pub const MAX_WIDTH: u32 = 32_768;
 pub const MAX_HEIGHT: u32 = 32_768;
@@ -42,6 +44,10 @@ mod tests {
                 .checked_add(MAX_CANDIDATE_BYTES)
                 .and_then(|bytes| bytes.checked_add(MAX_SOURCE_BYTES))
                 .is_some_and(|bytes| bytes <= MAX_TEMPORARY_BYTES)
+        );
+        assert_eq!(
+            MAX_TEMPORARY_BYTES * MAX_STRATEGY_WORKERS as u64,
+            768 * 1024 * 1024
         );
     }
 }

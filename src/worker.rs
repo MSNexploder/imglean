@@ -100,27 +100,23 @@ pub fn run_strategy(
             return cleanup_failure_or(
                 artifacts,
                 &[&private_input, &candidate_path],
-                StrategyResult::Warning(format!("cannot start {strategy} worker")),
+                StrategyResult::Warning("cannot start worker".to_owned()),
             );
         }
     };
 
     let mut result = if output.timed_out {
-        StrategyResult::Warning(format!("{strategy} exceeded the worker timeout"))
+        StrategyResult::Warning("worker timeout exceeded".to_owned())
     } else if output.status.is_none_or(|status| !status.success()) {
         let detail = diagnostic_detail(&output.stderr, &output.stdout);
         StrategyResult::Warning(match detail {
-            Some(detail) => format!("{strategy} worker failed: {detail}"),
-            None => format!("{strategy} worker failed"),
+            Some(detail) => format!("worker failed: {detail}"),
+            None => "worker failed".to_owned(),
         })
     } else if matches!(strategy.execution, Execution::Embedded) && !output.stdout.bytes.is_empty() {
-        StrategyResult::Warning(format!(
-            "{strategy} worker produced unexpected standard output"
-        ))
+        StrategyResult::Warning("worker produced unexpected standard output".to_owned())
     } else if output.stderr.truncated || output.stdout.truncated {
-        StrategyResult::Warning(format!(
-            "{strategy} worker diagnostics exceeded the byte limit"
-        ))
+        StrategyResult::Warning("worker diagnostics exceeded the byte limit".to_owned())
     } else if !private_input_matches(&private_input, source) {
         StrategyResult::Failure("the private provider input changed during execution")
     } else {

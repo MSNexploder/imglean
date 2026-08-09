@@ -1,4 +1,4 @@
-# Version 0.2 Release Contract
+# Version 0.3 Release Contract
 
 > [!IMPORTANT]
 > Release automation is implemented, but the x86-64 target artifacts are not
@@ -7,7 +7,7 @@
 
 ## Targets
 
-Version 0.2 release qualification begins with these target-specific artifacts:
+Version 0.3 release qualification begins with these target-specific artifacts:
 
 - `x86_64-apple-darwin`;
 - `x86_64-unknown-linux-gnu`; and
@@ -35,7 +35,7 @@ toolchain and used for all builds. Each artifact records:
 - native compiler, linker, SDK, and build-tool versions; and
 - the source commit.
 
-This record supports audit and reconstruction. Version 0.2 does not promise
+This record supports audit and reconstruction. Version 0.3 does not promise
 bit-for-bit reproducible binaries.
 
 The development configuration currently pins cargo-deny `0.20.2`, cargo-about
@@ -49,16 +49,17 @@ the standard-library-only packager and is also recorded.
 ## Qualification
 
 Every target runs the canonical locked formatting, lint, and test gate plus the
-target-native CLI, both embedded strategies, worker-spawn, hard-link, metadata,
-and packaged-artifact smoke tests. Separate CI jobs install the checksum-pinned
+target-native CLI, both embedded strategies, bounded parallel workers,
+replacing rename publication, metadata, and packaged-artifact smoke tests.
+Separate CI jobs install the checksum-pinned
 supported OptiPNG version and prove external discovery and execution on each
-target. Representative native filesystems must demonstrate non-replacing
-hard-link publication. Cross-compilation alone does not qualify a target.
+target. Representative native filesystems must demonstrate complete replacing
+rename publication. Cross-compilation alone does not qualify a target.
 
 The canonical source gate is `mise run check`. Release qualification also runs
 `mise run audit`, regenerates and verifies `THIRD_PARTY_NOTICES.md`, generates
 and parses an SPDX 2.3 SBOM, builds the target's release executable natively,
-and smoke-tests that exact executable through the complete worker and hard-link
+and smoke-tests that exact executable through the complete worker and replacing
 publication flow before archiving it.
 
 The release-candidate workflow is manually dispatched and retains its archives
@@ -83,8 +84,9 @@ Each platform archive contains:
 - the release-input manifest; and
 - SHA-256 checksums.
 
-The manifest records stable strategy order, identifiers, embedded settings, the
-supported external-provider version and invocation arguments, and exact bundled
+The manifest records stable strategy order, identifiers, worker limits,
+embedded settings, the supported external-provider version and invocation
+arguments, and exact bundled
 OxiPNG, libdeflater, and Zopfli dependency versions. External OptiPNG is neither
 bundled nor included in the dependency inventory or SBOM.
 
@@ -93,7 +95,7 @@ Release notes state the exact platform boundary and do not imply that one binary
 runs across operating systems.
 
 `tools/package_release.py` refuses a dirty source tree for normal packaging. It
-also accepts only the three declared version 0.2 targets, requires the declared
+also accepts only the three declared version 0.3 targets, requires the declared
 target to equal the native Rust host, and requires the release-binary smoke
 corpus to produce a strict size reduction. It
 creates `.tar.gz` archives for macOS and Linux and `.zip` archives for Windows,

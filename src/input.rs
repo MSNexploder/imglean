@@ -109,7 +109,7 @@ pub fn preflight(arguments: Arguments) -> Result<Batch, PreflightError> {
             });
         }
         let destination = output_directory.join(&basename);
-        reject_existing_destination(&destination)?;
+        validate_destination(&destination)?;
         let sidecars = sidecar_paths(&canonical_source).ok_or_else(|| PreflightError::Input {
             path: argument.clone(),
             reason: "the canonical input has no filename",
@@ -123,11 +123,24 @@ pub fn preflight(arguments: Arguments) -> Result<Batch, PreflightError> {
     }
 
     for input in &inputs {
-        if canonical_sources.contains(&input.destination) {
-            return Err(PreflightError::Destination {
-                path: input.destination.clone(),
-                reason: "the destination aliases an input",
-            });
+        if fs::symlink_metadata(&input.destination).is_ok() {
+            for source in &inputs {
+                match same_file::is_same_file(&input.destination, &source.canonical_source) {
+                    Ok(true) => {
+                        return Err(PreflightError::Destination {
+                            path: input.destination.clone(),
+                            reason: "the destination aliases an input",
+                        });
+                    }
+                    Ok(false) => {}
+                    Err(_) => {
+                        return Err(PreflightError::Destination {
+                            path: input.destination.clone(),
+                            reason: "cannot compare the destination with the inputs",
+                        });
+                    }
+                }
+            }
         }
     }
 
@@ -264,11 +277,12 @@ fn validate_basename(path: &Path) -> Result<OsString, PreflightError> {
     Ok(basename.to_os_string())
 }
 
-fn reject_existing_destination(destination: &Path) -> Result<(), PreflightError> {
+fn validate_destination(destination: &Path) -> Result<(), PreflightError> {
     match fs::symlink_metadata(destination) {
+        Ok(metadata) if metadata.file_type().is_file() => Ok(()),
         Ok(_) => Err(PreflightError::Destination {
             path: destination.to_path_buf(),
-            reason: "the destination already contains a filesystem entry",
+            reason: "the existing destination is not a regular non-symlink file",
         }),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(_) => Err(PreflightError::Destination {
@@ -320,6 +334,7 @@ mod tests {
             output_directory: output_directory.clone(),
             inputs: vec![source.clone()],
             strategies: crate::strategy::Selection::default(),
+            jobs: 1,
         })
         .unwrap();
         assert_eq!(
@@ -350,6 +365,7 @@ mod tests {
                 output_directory: output.clone(),
                 inputs: vec![first.clone(), second],
                 strategies: crate::strategy::Selection::default(),
+                jobs: 1,
             }),
             Err(PreflightError::Input { reason, .. })
                 if reason == "the output basename collides after ASCII case folding"
@@ -359,6 +375,7 @@ mod tests {
                 output_directory: output,
                 inputs: vec![first.clone(), first],
                 strategies: crate::strategy::Selection::default(),
+                jobs: 1,
             }),
             Err(PreflightError::Input { reason, .. }) if reason == "the canonical input is repeated"
         ));
@@ -376,26 +393,28 @@ mod tests {
             output_directory: output,
             inputs: vec![first, second],
             strategies: crate::strategy::Selection::default(),
+            jobs: 1,
         })
         .unwrap();
         assert_eq!(batch.inputs.len(), 2);
     }
 
     #[test]
-    fn rejects_existing_destination_and_invalid_basename() {
+    fn accepts_existing_regular_destination_and_rejects_invalid_basename() {
         let directory = TestDirectory::new();
         let output = directory.create_directory("out");
         let source = directory.path.join("a.png");
         fs::write(&source, b"source").unwrap();
         fs::write(output.join("a.png"), b"existing").unwrap();
-        assert!(matches!(
+        assert!(
             preflight(Arguments {
                 output_directory: output,
                 inputs: vec![source],
                 strategies: crate::strategy::Selection::default(),
-            }),
-            Err(PreflightError::Destination { .. })
-        ));
+                jobs: 1,
+            })
+            .is_ok()
+        );
 
         assert!(matches!(
             validate_basename(Path::new(".png")),
@@ -404,6 +423,37 @@ mod tests {
         assert!(matches!(
             validate_basename(Path::new("photo.jpg")),
             Err(PreflightError::Input { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_destinations_that_alias_inputs() {
+        let directory = TestDirectory::new();
+        let source_directory = directory.create_directory("source");
+        let output = directory.create_directory("out");
+        let source = source_directory.join("a.png");
+        fs::write(&source, b"source").unwrap();
+        fs::hard_link(&source, output.join("a.png")).unwrap();
+
+        assert!(matches!(
+            preflight(Arguments {
+                output_directory: output,
+                inputs: vec![source.clone()],
+                strategies: crate::strategy::Selection::default(),
+                jobs: 1,
+            }),
+            Err(PreflightError::Destination { reason, .. })
+                if reason == "the destination aliases an input"
+        ));
+        assert!(matches!(
+            preflight(Arguments {
+                output_directory: source_directory,
+                inputs: vec![source],
+                strategies: crate::strategy::Selection::default(),
+                jobs: 1,
+            }),
+            Err(PreflightError::Destination { reason, .. })
+                if reason == "the destination aliases an input"
         ));
     }
 
@@ -423,6 +473,7 @@ mod tests {
                 output_directory: output.clone(),
                 inputs: vec![link],
                 strategies: crate::strategy::Selection::default(),
+                jobs: 1,
             }),
             Err(PreflightError::Input { reason, .. })
                 if reason == "the final input component is a symbolic link"
@@ -434,6 +485,7 @@ mod tests {
                 output_directory: output,
                 inputs: vec![target],
                 strategies: crate::strategy::Selection::default(),
+                jobs: 1,
             }),
             Err(PreflightError::Destination { .. })
         ));
@@ -449,6 +501,7 @@ mod tests {
             output_directory: output.clone(),
             inputs: vec![source.clone()],
             strategies: crate::strategy::Selection::default(),
+            jobs: 1,
         })
         .unwrap();
         let error = batch.inputs[0]
@@ -468,6 +521,7 @@ mod tests {
             output_directory: output,
             inputs: vec![source],
             strategies: crate::strategy::Selection::default(),
+            jobs: 1,
         })
         .unwrap();
         assert!(matches!(
@@ -481,6 +535,7 @@ mod tests {
             output_directory: directory.create_directory("second-out"),
             inputs: vec![directory.path.join("photo.png")],
             strategies: crate::strategy::Selection::default(),
+            jobs: 1,
         })
         .unwrap();
         assert!(matches!(
@@ -506,6 +561,7 @@ mod tests {
             output_directory: output.clone(),
             inputs: vec![linked_directory.join("Photo.PNG")],
             strategies: crate::strategy::Selection::default(),
+            jobs: 1,
         })
         .unwrap();
 

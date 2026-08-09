@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the bounded version 0.2 PNG validation corpus."""
+"""Generate the bounded v2 PNG validation corpus."""
 
 from __future__ import annotations
 

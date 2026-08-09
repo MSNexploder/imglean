@@ -1,4 +1,7 @@
+use std::fmt::Write as _;
 use std::io::Write;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
 use std::time::Instant;
 
 use crate::artifacts::Artifacts;
@@ -8,12 +11,12 @@ use crate::input::{self, CaptureError, PreflightError, PreflightInput};
 use crate::limits::{INVOCATION_TIMEOUT, MAX_AGGREGATE_SOURCE_BYTES};
 use crate::output::{self, OutputError};
 use crate::png;
-use crate::strategy::{self, Execution, Strategy, StrategyId};
+use crate::strategy::{self, Execution, RegistryEntry, RegistryState, Strategy, StrategyId};
 use crate::worker::{self, StrategyResult};
 
 pub fn run(arguments: Arguments, stdout: impl Write, mut stderr: impl Write) -> i32 {
-    let strategies = match strategy::resolve(&arguments.strategies) {
-        Ok(strategies) => strategies,
+    let registry = match strategy::resolve(&arguments.strategies) {
+        Ok(registry) => registry,
         Err(error) => {
             let mut stderr = stderr;
             write_stderr(
@@ -27,16 +30,17 @@ pub fn run(arguments: Arguments, stdout: impl Write, mut stderr: impl Write) -> 
             return 1;
         }
     };
-    for strategy in &strategies {
-        if let Execution::External {
+    for entry in &registry {
+        if let RegistryState::Runnable(Execution::External {
             executable,
             version,
-        } = &strategy.execution
+        }) = &entry.state
         {
             write_stderr(
                 &mut stderr,
                 &format!(
-                    "imglean: using {strategy} provider version {version} at {}\n",
+                    "imglean: using {} provider version {version} at {}\n",
+                    entry.id,
                     escape_path(executable.as_os_str())
                 ),
             );
@@ -48,7 +52,7 @@ pub fn run(arguments: Arguments, stdout: impl Write, mut stderr: impl Write) -> 
         stderr,
         MAX_AGGREGATE_SOURCE_BYTES,
         INVOCATION_TIMEOUT,
-        strategies,
+        registry,
         worker::run_strategy,
     )
 }
@@ -59,9 +63,10 @@ fn run_with_strategies(
     mut stderr: impl Write,
     maximum_aggregate_bytes: u64,
     invocation_timeout: std::time::Duration,
-    strategies: Vec<Strategy>,
-    mut execute: impl FnMut(&mut Artifacts, &[u8], &Strategy) -> StrategyResult,
+    registry: Vec<RegistryEntry>,
+    execute: impl Fn(&mut Artifacts, &[u8], &Strategy) -> StrategyResult + Sync,
 ) -> i32 {
+    let jobs = arguments.jobs;
     let mut budget = InvocationBudget {
         started: Instant::now(),
         timeout: invocation_timeout,
@@ -101,29 +106,25 @@ fn run_with_strategies(
             input,
             &mut artifacts,
             &mut budget,
-            &mut stderr,
-            &strategies,
-            &mut execute,
+            &registry,
+            jobs,
+            &execute,
         );
         let mut stop_after_reporting = false;
         let result_line = match outcome {
             InputOutcome::Success {
                 source_bytes,
                 output_bytes,
-                optimizer_warnings,
                 winner,
+                attempts,
             } => {
                 succeeded += 1;
-                warnings += optimizer_warnings;
-                format!(
-                    "ok {} -> {} ({source_bytes} -> {output_bytes} bytes; winner {})\n",
-                    escape_path(input.canonical_source.as_os_str()),
-                    escape_path(input.destination.as_os_str()),
-                    winner.map_or("baseline", StrategyId::as_str)
-                )
+                warnings += warning_count(&attempts);
+                format_success(input, source_bytes, output_bytes, winner, &attempts)
             }
-            InputOutcome::Failure(reason) => {
+            InputOutcome::Failure { reason, attempts } => {
                 failed += 1;
+                warnings += warning_count(&attempts);
                 write_stderr(
                     &mut stderr,
                     &format!(
@@ -131,13 +132,11 @@ fn run_with_strategies(
                         escape_path(input.canonical_source.as_os_str())
                     ),
                 );
-                format!(
-                    "failed {}\n",
-                    escape_path(input.canonical_source.as_os_str())
-                )
+                format_failure(input, &attempts)
             }
-            InputOutcome::InvocationFailure(reason) => {
+            InputOutcome::InvocationFailure { reason, attempts } => {
                 failed += 1;
+                warnings += warning_count(&attempts);
                 stop_after_reporting = true;
                 write_stderr(
                     &mut stderr,
@@ -146,10 +145,7 @@ fn run_with_strategies(
                         escape_path(input.canonical_source.as_os_str())
                     ),
                 );
-                format!(
-                    "failed {}\n",
-                    escape_path(input.canonical_source.as_os_str())
-                )
+                format_failure(input, &attempts)
             }
         };
         processed += 1;
@@ -171,9 +167,7 @@ fn run_with_strategies(
     let not_processed = batch.inputs.len().saturating_sub(processed);
     write_stderr(
         &mut stderr,
-        &format!(
-            "imglean: {succeeded} succeeded, {failed} failed, {warnings} optimizer warnings, {not_processed} not processed\n"
-        ),
+        &format_summary(succeeded, failed, warnings, not_processed),
     );
 
     if failed > 0 || stopped {
@@ -189,84 +183,140 @@ fn process_input(
     input: &mut PreflightInput,
     artifacts: &mut Artifacts,
     budget: &mut InvocationBudget,
-    stderr: &mut impl Write,
-    strategies: &[Strategy],
-    execute: &mut impl FnMut(&mut Artifacts, &[u8], &Strategy) -> StrategyResult,
+    registry: &[RegistryEntry],
+    jobs: usize,
+    execute: &(impl Fn(&mut Artifacts, &[u8], &Strategy) -> StrategyResult + Sync),
 ) -> InputOutcome {
+    let mut attempts = registry.iter().map(Attempt::from).collect::<Vec<_>>();
     let source_bytes =
         match input.capture(&mut budget.aggregate_bytes, budget.maximum_aggregate_bytes) {
             Ok(bytes) => bytes,
             Err(CaptureError::AggregateLimit) => {
-                return InputOutcome::InvocationFailure(
-                    "invocation aggregate source-byte limit exceeded",
-                );
+                return InputOutcome::InvocationFailure {
+                    reason: "invocation aggregate source-byte limit exceeded",
+                    attempts,
+                };
             }
-            Err(error) => return InputOutcome::Failure(capture_reason(&error)),
+            Err(error) => {
+                return InputOutcome::Failure {
+                    reason: capture_reason(&error),
+                    attempts,
+                };
+            }
         };
     let source = match png::validate_source(&source_bytes) {
         Ok(source) => source,
-        Err(error) => return InputOutcome::Failure(error.message()),
+        Err(error) => {
+            return InputOutcome::Failure {
+                reason: error.message(),
+                attempts,
+            };
+        }
     };
 
-    let mut optimizer_warnings = 0usize;
     let mut winner = None::<Vec<u8>>;
     let mut winner_strategy = None;
     let mut output_bytes = source.encoded_bytes();
-    for strategy in strategies {
-        if budget.elapsed() {
-            return InputOutcome::InvocationFailure("invocation elapsed-time limit exceeded");
-        }
-        match execute(artifacts, &source_bytes, strategy) {
+    if budget.elapsed() {
+        return InputOutcome::InvocationFailure {
+            reason: "invocation elapsed-time limit exceeded",
+            attempts,
+        };
+    }
+    let runnable = registry
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entry)| match &entry.state {
+            RegistryState::Runnable(execution) => Some((
+                index,
+                Strategy {
+                    id: entry.id,
+                    execution: execution.clone(),
+                },
+            )),
+            RegistryState::Disabled | RegistryState::Unavailable => None,
+        })
+        .collect::<Vec<_>>();
+    let (scheduled, spawn_failed) = execute_parallel(
+        artifacts.directory(),
+        &source_bytes,
+        runnable,
+        jobs,
+        budget.deadline(),
+        execute,
+    );
+    let mut failure = None;
+    let mut elapsed = false;
+    for (index, result) in scheduled {
+        let Some(result) = result else {
+            elapsed = true;
+            continue;
+        };
+        let strategy = attempts[index].strategy;
+        let outcome = match result {
             StrategyResult::Candidate(bytes) => match png::validate_candidate(&source, &bytes) {
                 Ok(validated) if validated.encoded_bytes() < output_bytes => {
                     output_bytes = validated.encoded_bytes();
                     winner = Some(bytes);
-                    winner_strategy = Some(strategy.id);
+                    winner_strategy = Some(strategy);
+                    AttemptOutcome::Candidate(validated.encoded_bytes())
                 }
-                Ok(_) => {}
-                Err(error) => {
-                    optimizer_warnings += 1;
-                    write_stderr(
-                        stderr,
-                        &format!(
-                            "imglean: warning: {strategy} candidate rejected for {}: {}\n",
-                            escape_path(input.canonical_source.as_os_str()),
-                            error.message()
-                        ),
-                    );
-                }
+                Ok(validated) => AttemptOutcome::Candidate(validated.encoded_bytes()),
+                Err(error) => AttemptOutcome::Rejected(error.message()),
             },
-            StrategyResult::NoCandidate => {}
-            StrategyResult::Warning(message) => {
-                optimizer_warnings += 1;
-                write_stderr(
-                    stderr,
-                    &format!(
-                        "imglean: warning: {strategy} for {}: {message}\n",
-                        escape_path(input.canonical_source.as_os_str())
-                    ),
-                );
+            StrategyResult::NoCandidate => AttemptOutcome::NoCandidate,
+            StrategyResult::Warning(message) => AttemptOutcome::Warning(message),
+            StrategyResult::Failure(reason) => {
+                failure.get_or_insert(reason);
+                AttemptOutcome::Failed
             }
-            StrategyResult::Failure(reason) => return InputOutcome::Failure(reason),
-        }
+        };
+        attempts[index].outcome = outcome;
+    }
+
+    if elapsed || budget.elapsed() {
+        return InputOutcome::InvocationFailure {
+            reason: "invocation elapsed-time limit exceeded",
+            attempts,
+        };
+    }
+    if spawn_failed {
+        return InputOutcome::Failure {
+            reason: "cannot create a strategy worker thread",
+            attempts,
+        };
+    }
+    if let Some(reason) = failure {
+        return InputOutcome::Failure { reason, attempts };
     }
 
     let winner = winner.as_deref().unwrap_or(&source_bytes);
     if budget.elapsed() {
-        return InputOutcome::InvocationFailure("invocation elapsed-time limit exceeded");
+        return InputOutcome::InvocationFailure {
+            reason: "invocation elapsed-time limit exceeded",
+            attempts,
+        };
     }
     let prepared = match output::prepare(artifacts, &source, winner) {
         Ok(prepared) => prepared,
-        Err(error) => return InputOutcome::Failure(output_reason(&error)),
+        Err(error) => {
+            return InputOutcome::Failure {
+                reason: output_reason(&error),
+                attempts,
+            };
+        }
     };
     if let Err(error) = output::publish(artifacts, prepared, &input.destination) {
-        return InputOutcome::Failure(output_reason(&error));
+        return InputOutcome::Failure {
+            reason: output_reason(&error),
+            attempts,
+        };
     }
     InputOutcome::Success {
         source_bytes: source.encoded_bytes(),
         output_bytes,
-        optimizer_warnings,
         winner: winner_strategy,
+        attempts,
     }
 }
 
@@ -281,17 +331,121 @@ impl InvocationBudget {
     fn elapsed(&self) -> bool {
         self.started.elapsed() > self.timeout
     }
+
+    fn deadline(&self) -> InvocationDeadline {
+        InvocationDeadline {
+            started: self.started,
+            timeout: self.timeout,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct InvocationDeadline {
+    started: Instant,
+    timeout: std::time::Duration,
+}
+
+impl InvocationDeadline {
+    fn elapsed(self) -> bool {
+        self.started.elapsed() > self.timeout
+    }
+}
+
+fn execute_parallel(
+    artifact_directory: &std::path::Path,
+    source: &[u8],
+    runnable: Vec<(usize, Strategy)>,
+    jobs: usize,
+    deadline: InvocationDeadline,
+    execute: &(impl Fn(&mut Artifacts, &[u8], &Strategy) -> StrategyResult + Sync),
+) -> (Vec<(usize, Option<StrategyResult>)>, bool) {
+    if runnable.is_empty() {
+        return (Vec::new(), false);
+    }
+    let worker_count = jobs.min(runnable.len());
+    let next = AtomicUsize::new(0);
+    let (sender, receiver) = mpsc::channel();
+    std::thread::scope(|scope| {
+        let mut spawn_failed = false;
+        for _ in 0..worker_count {
+            let sender = sender.clone();
+            let next = &next;
+            let runnable = &runnable;
+            let spawned = std::thread::Builder::new().spawn_scoped(scope, move || {
+                loop {
+                    let job = next.fetch_add(1, Ordering::Relaxed);
+                    let Some((registry_index, strategy)) = runnable.get(job) else {
+                        break;
+                    };
+                    let result = if deadline.elapsed() {
+                        None
+                    } else {
+                        let mut artifacts = Artifacts::new(artifact_directory.to_path_buf());
+                        Some(execute(&mut artifacts, source, strategy))
+                    };
+                    if sender.send((*registry_index, result)).is_err() {
+                        break;
+                    }
+                }
+            });
+            if spawned.is_err() {
+                spawn_failed = true;
+                break;
+            }
+        }
+        drop(sender);
+        let mut results = receiver.into_iter().collect::<Vec<_>>();
+        results.sort_by_key(|(index, _)| *index);
+        (results, spawn_failed)
+    })
 }
 
 enum InputOutcome {
     Success {
         source_bytes: usize,
         output_bytes: usize,
-        optimizer_warnings: usize,
         winner: Option<StrategyId>,
+        attempts: Vec<Attempt>,
     },
-    Failure(&'static str),
-    InvocationFailure(&'static str),
+    Failure {
+        reason: &'static str,
+        attempts: Vec<Attempt>,
+    },
+    InvocationFailure {
+        reason: &'static str,
+        attempts: Vec<Attempt>,
+    },
+}
+
+struct Attempt {
+    strategy: StrategyId,
+    outcome: AttemptOutcome,
+}
+
+enum AttemptOutcome {
+    Candidate(usize),
+    NoCandidate,
+    Warning(String),
+    Rejected(&'static str),
+    Failed,
+    Disabled,
+    Unavailable,
+    NotRun,
+}
+
+impl From<&RegistryEntry> for Attempt {
+    fn from(entry: &RegistryEntry) -> Self {
+        let outcome = match entry.state {
+            RegistryState::Runnable(_) => AttemptOutcome::NotRun,
+            RegistryState::Disabled => AttemptOutcome::Disabled,
+            RegistryState::Unavailable => AttemptOutcome::Unavailable,
+        };
+        Self {
+            strategy: entry.id,
+            outcome,
+        }
+    }
 }
 
 fn capture_reason(error: &CaptureError) -> &'static str {
@@ -303,8 +457,162 @@ fn capture_reason(error: &CaptureError) -> &'static str {
 
 fn output_reason(error: &OutputError) -> &'static str {
     match error {
-        OutputError::BeforePublication(reason) | OutputError::AfterPublication(reason) => reason,
+        OutputError::BeforePublication(reason) => reason,
     }
+}
+
+fn format_success(
+    input: &PreflightInput,
+    source_bytes: usize,
+    output_bytes: usize,
+    winner: Option<StrategyId>,
+    attempts: &[Attempt],
+) -> String {
+    let mut report = format!("{}\n", input_label(input));
+    push_candidate_line(
+        &mut report,
+        "baseline",
+        source_bytes,
+        winner.is_none().then_some((source_bytes, output_bytes)),
+    );
+    for attempt in attempts {
+        push_attempt_line(
+            &mut report,
+            attempt,
+            (winner == Some(attempt.strategy)).then_some((source_bytes, output_bytes)),
+        );
+    }
+    let _ = writeln!(
+        report,
+        "     {:<24} {}\n",
+        "output",
+        escape_path(input.destination.as_os_str())
+    );
+    report
+}
+
+fn push_attempt_line(
+    report: &mut String,
+    attempt: &Attempt,
+    winner_savings: Option<(usize, usize)>,
+) {
+    let label = attempt.strategy.as_str();
+    match &attempt.outcome {
+        AttemptOutcome::Candidate(bytes) => {
+            push_candidate_line(report, label, *bytes, winner_savings)
+        }
+        AttemptOutcome::NoCandidate => {
+            let _ = writeln!(report, "     {label:<24} no candidate");
+        }
+        AttemptOutcome::Warning(message) => {
+            let _ = writeln!(report, "  !  {label:<24} warning: {message}");
+        }
+        AttemptOutcome::Rejected(reason) => {
+            let _ = writeln!(report, "  !  {label:<24} rejected: {reason}");
+        }
+        AttemptOutcome::Failed => {
+            let _ = writeln!(report, "  !! {label:<24} failed");
+        }
+        AttemptOutcome::Disabled => {
+            let _ = writeln!(report, "     {label:<24} disabled");
+        }
+        AttemptOutcome::Unavailable => {
+            let _ = writeln!(report, "     {label:<24} unavailable");
+        }
+        AttemptOutcome::NotRun => {
+            let _ = writeln!(report, "     {label:<24} not run");
+        }
+    }
+}
+
+fn push_candidate_line(
+    report: &mut String,
+    label: &str,
+    bytes: usize,
+    winner_savings: Option<(usize, usize)>,
+) {
+    let marker = if winner_savings.is_some() {
+        "  -> "
+    } else {
+        "     "
+    };
+    let _ = write!(report, "{marker}{label:<24} {} bytes", format_bytes(bytes));
+    if let Some((source_bytes, output_bytes)) = winner_savings {
+        let saved = source_bytes - output_bytes;
+        if saved == 0 {
+            report.push_str("  winner");
+        } else {
+            let percent = saved as f64 * 100.0 / source_bytes as f64;
+            let _ = write!(
+                report,
+                "  winner; saved {} bytes ({percent:.2}%)",
+                format_bytes(saved)
+            );
+        }
+    }
+    report.push('\n');
+}
+
+fn format_failure(input: &PreflightInput, attempts: &[Attempt]) -> String {
+    let mut report = format!("{}\n", input_label(input));
+    for attempt in attempts {
+        push_attempt_line(&mut report, attempt, None);
+    }
+    report.push_str("  !! failed\n\n");
+    report
+}
+
+fn warning_count(attempts: &[Attempt]) -> usize {
+    attempts
+        .iter()
+        .filter(|attempt| {
+            matches!(
+                attempt.outcome,
+                AttemptOutcome::Warning(_) | AttemptOutcome::Rejected(_)
+            )
+        })
+        .count()
+}
+
+fn input_label(input: &PreflightInput) -> String {
+    escape_path(
+        input
+            .destination
+            .file_name()
+            .unwrap_or(input.destination.as_os_str()),
+    )
+}
+
+fn format_bytes(bytes: usize) -> String {
+    let digits = bytes.to_string();
+    let mut formatted = String::with_capacity(digits.len() + digits.len() / 3);
+    for (index, digit) in digits.bytes().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            formatted.push(',');
+        }
+        formatted.push(char::from(digit));
+    }
+    formatted
+}
+
+fn format_summary(
+    succeeded: usize,
+    failed: usize,
+    warnings: usize,
+    not_processed: usize,
+) -> String {
+    let mut parts = vec![format!("{succeeded} succeeded")];
+    if failed > 0 {
+        parts.push(format!("{failed} failed"));
+    }
+    if warnings > 0 {
+        let label = if warnings == 1 { "warning" } else { "warnings" };
+        parts.push(format!("{warnings} {label}"));
+    }
+    if not_processed > 0 {
+        parts.push(format!("{not_processed} not processed"));
+    }
+    format!("Summary: {}\n", parts.join(", "))
 }
 
 fn format_preflight_error(error: &PreflightError) -> String {
@@ -341,7 +649,8 @@ mod tests {
     use std::fs;
     use std::io::{self, Write as _};
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+    use std::sync::{Barrier, Mutex};
 
     use flate2::Compression;
     use flate2::write::ZlibEncoder;
@@ -365,7 +674,7 @@ mod tests {
             &mut stderr,
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
-            test_strategies(),
+            test_registry(),
             |_, source, _| StrategyResult::Candidate(source.to_vec()),
         );
         assert_eq!(status, 0);
@@ -373,7 +682,7 @@ mod tests {
         assert!(
             String::from_utf8(stdout)
                 .unwrap()
-                .contains("winner baseline")
+                .contains("-> baseline                 67 bytes  winner")
         );
     }
 
@@ -389,19 +698,19 @@ mod tests {
         fs::write(&source, source_bytes).unwrap();
         let strategies = StrategyId::ALL
             .into_iter()
-            .map(|id| Strategy {
+            .map(|id| RegistryEntry {
                 id,
-                execution: if id == StrategyId::OptipngV1 {
+                state: RegistryState::Runnable(if id == StrategyId::OptipngV1 {
                     Execution::External {
                         executable: PathBuf::from("unused"),
                         version: "7.9.1".to_owned(),
                     }
                 } else {
                     Execution::Embedded
-                },
+                }),
             })
             .collect::<Vec<_>>();
-        let mut attempted = Vec::new();
+        let attempted = Mutex::new(Vec::new());
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
 
@@ -413,7 +722,7 @@ mod tests {
             INVOCATION_TIMEOUT,
             strategies,
             |_, _, strategy| {
-                attempted.push(strategy.id);
+                attempted.lock().unwrap().push(strategy.id);
                 match strategy.id {
                     StrategyId::OxipngLibdeflateV1 => {
                         StrategyResult::Candidate(first_candidate.clone())
@@ -427,17 +736,155 @@ mod tests {
         );
 
         assert_eq!(status, 3);
-        assert_eq!(attempted, StrategyId::ALL);
+        let attempted = attempted.into_inner().unwrap();
+        assert_eq!(attempted.len(), StrategyId::ALL.len());
+        assert!(StrategyId::ALL.iter().all(|id| attempted.contains(id)));
         assert_eq!(fs::read(output.join("source.png")).unwrap(), base);
+        let stdout = String::from_utf8(stdout).unwrap();
+        assert!(stdout.contains("baseline                 103 bytes"));
+        assert!(stdout.contains("oxipng-libdeflate-v1     91 bytes"));
+        assert!(stdout.contains("oxipng-zopfli-v1         warning: injected failure"));
+        let winner_line = stdout
+            .lines()
+            .find(|line| line.contains("-> optipng-v1"))
+            .expect("winner row");
+        assert!(winner_line.contains("67 bytes  winner; saved 36 bytes"));
+        assert_eq!(
+            String::from_utf8(stderr).unwrap(),
+            "Summary: 1 succeeded, 1 warning\n"
+        );
+    }
+
+    #[test]
+    fn reports_runnable_disabled_and_unavailable_registry_entries() {
+        let directory = TestDirectory::new();
+        let output = directory.create_directory("out");
+        let source = directory.path.join("source.png");
+        let bytes = valid_png();
+        fs::write(&source, &bytes).unwrap();
+        let registry = vec![
+            RegistryEntry {
+                id: StrategyId::OxipngLibdeflateV1,
+                state: RegistryState::Runnable(Execution::Embedded),
+            },
+            RegistryEntry {
+                id: StrategyId::OxipngZopfliV1,
+                state: RegistryState::Disabled,
+            },
+            RegistryEntry {
+                id: StrategyId::OptipngV1,
+                state: RegistryState::Unavailable,
+            },
+        ];
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let status = run_with_strategies(
+            arguments(output, vec![source]),
+            &mut stdout,
+            &mut stderr,
+            MAX_AGGREGATE_SOURCE_BYTES,
+            INVOCATION_TIMEOUT,
+            registry,
+            |_, source, _| StrategyResult::Candidate(source.to_vec()),
+        );
+
+        assert_eq!(status, 0);
+        let stdout = String::from_utf8(stdout).unwrap();
+        assert!(stdout.contains("oxipng-libdeflate-v1     67 bytes"));
+        assert!(stdout.contains("oxipng-zopfli-v1         disabled"));
+        assert!(stdout.contains("optipng-v1               unavailable"));
+    }
+
+    #[test]
+    fn bounds_parallel_strategy_execution_to_the_requested_jobs() {
+        let directory = TestDirectory::new();
+        let output = directory.create_directory("out");
+        let source = directory.path.join("source.png");
+        fs::write(&source, valid_png()).unwrap();
+        let registry = StrategyId::ALL
+            .into_iter()
+            .map(|id| RegistryEntry {
+                id,
+                state: RegistryState::Runnable(Execution::Embedded),
+            })
+            .collect();
+        let barrier = Barrier::new(2);
+        let active = AtomicUsize::new(0);
+        let maximum = AtomicUsize::new(0);
+        let counts = [
+            AtomicUsize::new(0),
+            AtomicUsize::new(0),
+            AtomicUsize::new(0),
+        ];
+        let mut arguments = arguments(output, vec![source]);
+        arguments.jobs = 2;
+
+        let status = run_with_strategies(
+            arguments,
+            Vec::new(),
+            Vec::new(),
+            MAX_AGGREGATE_SOURCE_BYTES,
+            INVOCATION_TIMEOUT,
+            registry,
+            |_, _, strategy| {
+                let index = StrategyId::ALL
+                    .iter()
+                    .position(|id| *id == strategy.id)
+                    .unwrap();
+                counts[index].fetch_add(1, Ordering::Relaxed);
+                let current = active.fetch_add(1, Ordering::Relaxed) + 1;
+                maximum.fetch_max(current, Ordering::Relaxed);
+                if strategy.id != StrategyId::OptipngV1 {
+                    barrier.wait();
+                }
+                active.fetch_sub(1, Ordering::Relaxed);
+                StrategyResult::NoCandidate
+            },
+        );
+
+        assert_eq!(status, 0);
+        assert_eq!(maximum.load(Ordering::Relaxed), 2);
+        assert!(
+            counts
+                .iter()
+                .all(|count| count.load(Ordering::Relaxed) == 1)
+        );
+    }
+
+    #[test]
+    fn parallel_equal_size_candidates_keep_registry_order() {
+        let directory = TestDirectory::new();
+        let output = directory.create_directory("out");
+        let source = directory.path.join("source.png");
+        let winner = valid_png();
+        fs::write(&source, with_empty_idats(&winner, 2)).unwrap();
+        let registry = StrategyId::EMBEDDED
+            .into_iter()
+            .map(|id| RegistryEntry {
+                id,
+                state: RegistryState::Runnable(Execution::Embedded),
+            })
+            .collect();
+        let mut arguments = arguments(output, vec![source]);
+        arguments.jobs = 2;
+        let mut stdout = Vec::new();
+
+        let status = run_with_strategies(
+            arguments,
+            &mut stdout,
+            Vec::new(),
+            MAX_AGGREGATE_SOURCE_BYTES,
+            INVOCATION_TIMEOUT,
+            registry,
+            |_, _, _| StrategyResult::Candidate(winner.clone()),
+        );
+
+        assert_eq!(status, 0);
         assert!(
             String::from_utf8(stdout)
                 .unwrap()
-                .contains("winner optipng-v1")
-        );
-        assert!(
-            String::from_utf8(stderr)
-                .unwrap()
-                .contains("1 optimizer warnings")
+                .contains("-> oxipng-libdeflate-v1")
         );
     }
 
@@ -451,7 +898,7 @@ mod tests {
             &mut stderr,
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
-            test_strategies(),
+            test_registry(),
             |_, _, _| panic!("strategy must not run"),
         );
         assert_eq!(status, 1);
@@ -479,7 +926,7 @@ mod tests {
             &mut stderr,
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
-            test_strategies(),
+            test_registry(),
             |_, source, _| StrategyResult::Candidate(source.to_vec()),
         );
         assert_eq!(status, 1);
@@ -505,12 +952,15 @@ mod tests {
             &mut stderr,
             0,
             INVOCATION_TIMEOUT,
-            test_strategies(),
+            test_registry(),
             |_, _, _| panic!("strategy must not run"),
         );
 
         assert_eq!(status, 1);
-        assert_eq!(String::from_utf8(stdout).unwrap().lines().count(), 1);
+        let stdout = String::from_utf8(stdout).unwrap();
+        assert!(stdout.starts_with("first.png\n"));
+        assert!(stdout.contains("oxipng-libdeflate-v1     not run"));
+        assert!(stdout.contains("  !! failed"));
         let stderr = String::from_utf8(stderr).unwrap();
         assert!(stderr.contains("aggregate source-byte limit exceeded"));
         assert!(stderr.contains("1 not processed"));
@@ -536,7 +986,7 @@ mod tests {
             &mut stderr,
             MAX_AGGREGATE_SOURCE_BYTES,
             std::time::Duration::ZERO,
-            test_strategies(),
+            test_registry(),
             |_, _, _| panic!("strategy must not run"),
         );
 
@@ -557,12 +1007,12 @@ mod tests {
         fs::write(&source, valid_png()).unwrap();
         let strategies = StrategyId::EMBEDDED
             .into_iter()
-            .map(|id| Strategy {
+            .map(|id| RegistryEntry {
                 id,
-                execution: Execution::Embedded,
+                state: RegistryState::Runnable(Execution::Embedded),
             })
             .collect();
-        let mut attempts = 0usize;
+        let attempts = AtomicUsize::new(0);
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
 
@@ -574,14 +1024,14 @@ mod tests {
             std::time::Duration::from_secs(1),
             strategies,
             |_, source, _| {
-                attempts += 1;
+                attempts.fetch_add(1, Ordering::Relaxed);
                 std::thread::sleep(std::time::Duration::from_millis(1_100));
                 StrategyResult::Candidate(source.to_vec())
             },
         );
 
         assert_eq!(status, 1);
-        assert_eq!(attempts, 1);
+        assert_eq!(attempts.load(Ordering::Relaxed), 1);
         assert!(!output.join("source.png").exists());
         assert!(
             String::from_utf8(stderr)
@@ -607,17 +1057,13 @@ mod tests {
             &mut stderr,
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
-            test_strategies(),
+            test_registry(),
             |_, _, _| StrategyResult::Candidate(larger.clone()),
         );
 
         assert_eq!(status, 0);
         assert_eq!(fs::read(output.join("source.png")).unwrap(), bytes);
-        assert!(
-            String::from_utf8(stderr)
-                .unwrap()
-                .contains("0 optimizer warnings")
-        );
+        assert_eq!(String::from_utf8(stderr).unwrap(), "Summary: 1 succeeded\n");
     }
 
     #[test]
@@ -636,15 +1082,64 @@ mod tests {
             &mut stderr,
             MAX_AGGREGATE_SOURCE_BYTES,
             INVOCATION_TIMEOUT,
-            test_strategies(),
+            test_registry(),
             |_, _, _| StrategyResult::Warning("injected provider failure".to_owned()),
         );
 
         assert_eq!(status, 3);
         assert_eq!(fs::read(output.join("source.png")).unwrap(), bytes);
+        assert!(
+            String::from_utf8(stdout)
+                .unwrap()
+                .contains("warning: injected provider failure")
+        );
+        assert_eq!(
+            String::from_utf8(stderr).unwrap(),
+            "Summary: 1 succeeded, 1 warning\n"
+        );
+    }
+
+    #[test]
+    fn later_strategy_failure_preserves_earlier_warning() {
+        let directory = TestDirectory::new();
+        let output = directory.create_directory("out");
+        let source = directory.path.join("source.png");
+        fs::write(&source, valid_png()).unwrap();
+        let strategies = StrategyId::EMBEDDED
+            .into_iter()
+            .map(|id| RegistryEntry {
+                id,
+                state: RegistryState::Runnable(Execution::Embedded),
+            })
+            .collect();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let status = run_with_strategies(
+            arguments(output.clone(), vec![source]),
+            &mut stdout,
+            &mut stderr,
+            MAX_AGGREGATE_SOURCE_BYTES,
+            INVOCATION_TIMEOUT,
+            strategies,
+            |_, _, strategy| match strategy.id {
+                StrategyId::OxipngLibdeflateV1 => {
+                    StrategyResult::Warning("injected warning".to_owned())
+                }
+                StrategyId::OxipngZopfliV1 => StrategyResult::Failure("injected fatal failure"),
+                StrategyId::OptipngV1 => unreachable!(),
+            },
+        );
+
+        assert_eq!(status, 1);
+        assert!(!output.join("source.png").exists());
+        let stdout = String::from_utf8(stdout).unwrap();
+        assert!(stdout.contains("warning: injected warning"));
+        assert!(stdout.contains("oxipng-zopfli-v1         failed"));
+        assert!(stdout.contains("!! failed"));
         let stderr = String::from_utf8(stderr).unwrap();
-        assert!(stderr.contains("injected provider failure"));
-        assert!(stderr.contains("1 optimizer warnings"));
+        assert!(stderr.contains("injected fatal failure"));
+        assert!(stderr.contains("Summary: 0 succeeded, 1 failed, 1 warning"));
     }
 
     #[test]
@@ -656,9 +1151,9 @@ mod tests {
         fs::write(&source, &bytes).unwrap();
         let strategies = StrategyId::EMBEDDED
             .into_iter()
-            .map(|id| Strategy {
+            .map(|id| RegistryEntry {
                 id,
-                execution: Execution::Embedded,
+                state: RegistryState::Runnable(Execution::Embedded),
             })
             .collect();
         let mut stdout = Vec::new();
@@ -680,14 +1175,27 @@ mod tests {
 
         assert_eq!(status, 3);
         assert_eq!(fs::read(output.join("source.png")).unwrap(), bytes);
-        assert!(
-            String::from_utf8(stdout)
-                .unwrap()
-                .contains("winner baseline")
+        let stdout = String::from_utf8(stdout).unwrap();
+        assert!(stdout.contains("-> baseline                 67 bytes  winner"));
+        assert!(stdout.contains("oxipng-libdeflate-v1     no candidate"));
+        assert!(stdout.contains("oxipng-zopfli-v1         rejected: invalid PNG signature"));
+        assert_eq!(
+            String::from_utf8(stderr).unwrap(),
+            "Summary: 1 succeeded, 1 warning\n"
         );
-        let stderr = String::from_utf8(stderr).unwrap();
-        assert!(stderr.contains("candidate rejected"));
-        assert!(stderr.contains("1 optimizer warnings"));
+    }
+
+    #[test]
+    fn formats_grouped_bytes_and_compact_summaries() {
+        assert_eq!(format_bytes(0), "0");
+        assert_eq!(format_bytes(999), "999");
+        assert_eq!(format_bytes(1_234), "1,234");
+        assert_eq!(format_bytes(12_345_678), "12,345,678");
+        assert_eq!(format_summary(8, 0, 0, 0), "Summary: 8 succeeded\n");
+        assert_eq!(
+            format_summary(8, 1, 2, 3),
+            "Summary: 8 succeeded, 1 failed, 2 warnings, 3 not processed\n"
+        );
     }
 
     struct FailingWriter;
@@ -697,13 +1205,14 @@ mod tests {
             output_directory,
             inputs,
             strategies: crate::strategy::Selection::default(),
+            jobs: 1,
         }
     }
 
-    fn test_strategies() -> Vec<Strategy> {
-        vec![Strategy {
+    fn test_registry() -> Vec<RegistryEntry> {
+        vec![RegistryEntry {
             id: crate::strategy::StrategyId::OxipngLibdeflateV1,
-            execution: crate::strategy::Execution::Embedded,
+            state: RegistryState::Runnable(crate::strategy::Execution::Embedded),
         }]
     }
 

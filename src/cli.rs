@@ -1,14 +1,18 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
-use crate::limits::MAX_INPUTS;
+use crate::limits::{DEFAULT_STRATEGY_WORKERS, MAX_INPUTS, MAX_STRATEGY_WORKERS};
 use crate::strategy::{ProviderId, ProviderPath, Selection, StrategyId};
 
-const HELP: &str = "ImgLean 0.2.0\n\
+const HELP: &str = concat!(
+    "ImgLean ",
+    env!("CARGO_PKG_VERSION"),
+    "\n\
 Make supported PNG images lean without replacing source files.\n\n\
 Usage: imglean --output OUTPUT_DIRECTORY INPUT...\n\n\
 Options:\n\
   --output DIRECTORY       Existing directory for separate output files\n\
+  --jobs N                 Run up to N strategy workers (1-3; default: auto)\n\
   --disable-strategy ID    Disable a strategy; may be repeated\n\
   --require-strategy ID    Require an available strategy; may be repeated\n\
   --provider NAME PATH     Use and require a supported provider executable\n\
@@ -18,7 +22,8 @@ Options:\n\
 Strategy IDs (default order):\n\
   oxipng-libdeflate-v1, oxipng-zopfli-v1, optipng-v1\n\
 Supported external provider:\n\
-  optipng 7.9.1\n";
+  optipng 7.9.1\n"
+);
 
 const VERSION: &str = concat!("imglean ", env!("CARGO_PKG_VERSION"), "\n");
 
@@ -27,6 +32,7 @@ pub struct Arguments {
     pub output_directory: PathBuf,
     pub inputs: Vec<PathBuf>,
     pub strategies: Selection,
+    pub jobs: usize,
 }
 
 #[derive(Debug)]
@@ -55,6 +61,7 @@ where
     let mut output_directory = None;
     let mut inputs = Vec::new();
     let mut strategies = Selection::default();
+    let mut jobs = None;
     let mut options = true;
 
     while let Some(argument) = arguments.next() {
@@ -67,6 +74,7 @@ where
             if output_directory.is_some()
                 || !inputs.is_empty()
                 || strategies != Selection::default()
+                || jobs.is_some()
                 || arguments.next().is_some()
             {
                 return usage("--help cannot be combined with other arguments");
@@ -78,6 +86,7 @@ where
             if output_directory.is_some()
                 || !inputs.is_empty()
                 || strategies != Selection::default()
+                || jobs.is_some()
                 || arguments.next().is_some()
             {
                 return usage("--version cannot be combined with other arguments");
@@ -96,6 +105,14 @@ where
                 return usage("--output requires a nonempty directory");
             }
             output_directory = Some(PathBuf::from(directory));
+            continue;
+        }
+
+        if options && argument == OsStr::new("--jobs") {
+            if jobs.is_some() {
+                return usage("--jobs may be specified only once");
+            }
+            jobs = Some(parse_jobs(arguments.next())?);
             continue;
         }
 
@@ -171,7 +188,30 @@ where
         output_directory,
         inputs,
         strategies,
+        jobs: jobs.unwrap_or_else(default_jobs),
     }))
+}
+
+fn parse_jobs(argument: Option<OsString>) -> Result<usize, UsageError> {
+    let Some(argument) = argument else {
+        return usage("--jobs requires a worker count");
+    };
+    let Some(value) = argument.to_str() else {
+        return usage("--jobs requires an ASCII integer");
+    };
+    let jobs = value.parse::<usize>().map_err(|_| UsageError {
+        message: "--jobs requires an integer from 1 to 3".to_owned(),
+    })?;
+    if !(1..=MAX_STRATEGY_WORKERS).contains(&jobs) {
+        return usage("--jobs requires an integer from 1 to 3");
+    }
+    Ok(jobs)
+}
+
+fn default_jobs() -> usize {
+    std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
+        .min(DEFAULT_STRATEGY_WORKERS)
 }
 
 fn parse_strategy(argument: Option<OsString>, option: &str) -> Result<StrategyId, UsageError> {
@@ -231,6 +271,7 @@ mod tests {
             [PathBuf::from("a.png"), PathBuf::from("b.png")]
         );
         assert_eq!(arguments.strategies, Selection::default());
+        assert!((1..=DEFAULT_STRATEGY_WORKERS).contains(&arguments.jobs));
     }
 
     #[test]
@@ -294,6 +335,30 @@ mod tests {
             parse_strings(&["imglean", "--wat"]).unwrap_err().message(),
             "unknown option"
         );
+        assert_eq!(
+            parse_strings(&["imglean", "--output", "out", "--jobs", "0", "a.png"])
+                .unwrap_err()
+                .message(),
+            "--jobs requires an integer from 1 to 3"
+        );
+        assert_eq!(
+            parse_strings(&[
+                "imglean", "--output", "out", "--jobs", "2", "--jobs", "1", "a.png"
+            ])
+            .unwrap_err()
+            .message(),
+            "--jobs may be specified only once"
+        );
+    }
+
+    #[test]
+    fn parses_explicit_worker_count() {
+        let Parsed::Run(arguments) =
+            parse_strings(&["imglean", "--jobs", "3", "--output", "out", "a.png"]).unwrap()
+        else {
+            panic!("expected runnable arguments");
+        };
+        assert_eq!(arguments.jobs, 3);
     }
 
     #[test]
