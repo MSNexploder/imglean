@@ -59,6 +59,10 @@ jobs:
       - uses: jdx/mise-action@v3
         with:
           install: false
+      - name: Select the single-configuration native generator
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '"CMAKE_GENERATOR=Ninja" >> $env:GITHUB_ENV'
       - name: Install build tools
         run: mise install rust python
       - name: Run native qualification gate

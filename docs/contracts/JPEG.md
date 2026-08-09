@@ -36,12 +36,17 @@ or perceptual quality. Numeric-quality transformations are trusted to the
 explicit provider adapter. The validated source remains the baseline, so a
 larger candidate never wins.
 
-The lossless jpegtran adapter copies all extra markers by default and
-transcodes existing JPEG coefficients without requantization. With
-`--strip-metadata`, it instead requests no extra-marker copying. Numeric-quality
-JPEG adapters re-encode and may drop application metadata. CI exercises these
-native behaviors with an Exif-bearing input, while the common candidate gate
-intentionally does not parse, compare, or verify removal of Exif payloads.
+The bundled lossless jpegtran implementation copies all extra markers by default
+and transcodes existing JPEG coefficients without requantization. With
+`--strip-metadata`, it instead requests no extra-marker copying. Bundled
+numeric-quality MozJPEG and Jpegli re-encode samples, copy saved application and
+comment markers by default, carry JFIF density forward, and regenerate JFIF and
+Adobe structural markers as needed to describe the new encoding without
+duplicating or blindly replaying them. They omit saved markers when stripping
+is requested. External overrides retain their native CLI
+behavior. CI exercises these paths with Exif- and APP15-bearing input, while the
+common candidate gate intentionally does not parse, compare, or verify removal
+of those payloads.
 
 ## Bounded validation
 

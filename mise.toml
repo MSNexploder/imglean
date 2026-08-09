@@ -44,4 +44,4 @@ run = "python tools/generate_notices.py"
 
 [tasks.sbom]
 description = "Generate an SPDX 2.3 software bill of materials"
-run = "cargo sbom --output-format spdx_json_2_3 > target/imglean.spdx.json"
+run = "python tools/generate_sbom.py > target/imglean.spdx.json"

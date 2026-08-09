@@ -1,36 +1,32 @@
-# External MozJPEG Strategy
+# Bundled MozJPEG Strategy
 
-`mozjpeg-v1` uses a separately installed MozJPEG `cjpeg` executable for JPEG
-inputs at numeric quality. It is not bundled, downloaded, installed, updated,
-or included in ImgLean's SBOM.
+`mozjpeg-v1` is enabled by default for JPEG inputs at numeric quality. ImgLean
+bundles the `mozjpeg` 0.10.13 Rust wrapper and `mozjpeg-sys` 2.2.3 native source.
+The validated JPEG is decoded to grayscale or RGB samples and re-encoded with
+the native quality value, progressive scans, optimized Huffman coding, and
+MozJPEG scan optimization.
 
-Discovery resolves `cjpeg`, requests its help text, and checks every option used
-by the adapter plus MozJPEG's distinguishing `-revert` option. No release number
-is requested, parsed, or gated. This prevents an unrelated libjpeg `cjpeg` from
-silently claiming the strategy while allowing compatible future MozJPEG
-releases.
+Opaque application and comment markers are copied by default. JFIF density is
+carried forward, while JFIF and Adobe structural markers are regenerated to
+describe the new encoding instead of being replayed. With `--strip-metadata`,
+the bundled strategy omits saved markers. This is provider-native best effort:
+the controller does not parse or verify metadata removal. The native codec runs
+only inside the provider worker, so codec panics or crashes remain isolated from
+the controller.
 
-For `--quality Q`, the adapter invokes:
+An explicit `--provider mozjpeg PATH` replaces the bundled implementation. The
+external adapter requires MozJPEG's distinguishing CLI capabilities and invokes:
 
 ```text
 cjpeg -quality Q -progressive -optimize -strict -outfile CANDIDATE PRIVATE_INPUT
 ```
 
-The native quality value is passed directly. Progressive encoding, optimized
-Huffman coding, and strict warning handling are explicit. The controller then
-applies the common JPEG candidate gate and keeps the result only when it is
-strictly smaller than the current winner.
+The external CLI exposes no compatible marker-removal switch, so
+`--strip-metadata` does not change that command. Provider release text is not a
+compatibility gate.
 
-The CLI's JPEG-input path re-encodes image samples and copies saved application
-markers, including Exif, without exposing a compatible marker-removal option.
-`--strip-metadata` therefore adds no MozJPEG argument, and `mozjpeg-v1` remains
-applicable. CI verifies that it runs and retains a source Exif marker under this
-best-effort policy.
-
-MozJPEG exposes a libjpeg-compatible native library and recommends linking for
-graphics applications. ImgLean deliberately uses its CLI because the current
-worker contract needs process crash/timeout isolation and linking would add
-unsafe FFI plus a native build chain to the default binary. MozJPEG is BSD-style
-licensed; as separately installed software it remains outside ImgLean's bundled
-dependency inventory. CI builds the pinned representative revision recorded in
-`ci/mozjpeg-revision.txt` on every release target and requires a real reduction.
+MozJPEG uses permissive IJG, BSD-3-Clause, and zlib licensing. Its exact wrapper
+and native source versions are recorded in the dependency lock, release
+manifest, SBOM, and notices. Native CI executes the bundled strategy directly
+and through the controller and tests a pinned representative external override
+on every release target.

@@ -139,7 +139,7 @@ def reachable_packages(metadata: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def dependency_inventory(packages: list[dict[str, Any]]) -> str:
-    lines = ["name\tversion\tlicense\tsource"]
+    lines = []
     for package in packages:
         lines.append(
             "\t".join(
@@ -151,7 +151,16 @@ def dependency_inventory(packages: list[dict[str, Any]]) -> str:
                 ]
             )
         )
-    return "\n".join(lines) + "\n"
+    lines.extend(
+        [
+            "cexcept\t2.99-optipng\tZlib\tvendored",
+            "highway\t1.1.0\tApache-2.0\tvendored by jpegli-sys",
+            "optipng\t"
+            f"{(ROOT / 'ci/optipng-version.txt').read_text().strip()}"
+            "\tZlib AND Libpng\tvendored",
+        ]
+    )
+    return "name\tversion\tlicense\tsource\n" + "\n".join(sorted(lines)) + "\n"
 
 
 def release_manifest(
@@ -172,7 +181,7 @@ def release_manifest(
         if node["id"] in identities
     }
     return {
-        "schema_version": 7,
+        "schema_version": 8,
         "package": "imglean",
         "version": tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"],
         "source_commit": run(["git", "rev-parse", "HEAD"]),
@@ -189,8 +198,16 @@ def release_manifest(
             "libdeflater": versions.get("libdeflater"),
             "libdeflate-sys": versions.get("libdeflate-sys"),
             "zopfli": versions.get("zopfli"),
+            "optipng": (ROOT / "ci/optipng-version.txt").read_text().strip(),
+            "cexcept": "2.99-optipng",
+            "highway": "1.1.0",
+            "mozjpeg": versions.get("mozjpeg"),
+            "mozjpeg-sys": versions.get("mozjpeg-sys"),
+            "jpegli": versions.get("jpegli"),
+            "jpegli-sys": versions.get("jpegli-sys"),
+            "libpng-sys": versions.get("libpng-sys"),
         },
-        "representative_external_providers": [
+        "representative_external_overrides": [
             {
                 "strategies": ["optipng-v1"],
                 "implementation": "OptiPNG",
@@ -224,24 +241,25 @@ def release_manifest(
         "strategy_registry": [
             {
                 "id": "oxipng-libdeflate-v1",
-                "execution": "embedded",
+                "execution": "bundled",
                 "format": "PNG",
                 "settings": "OxiPNG 10.1.1, pinned filters, libdeflater level 11",
                 "metadata": "preserve by default; OxiPNG Safe with --strip-metadata",
             },
             {
                 "id": "oxipng-zopfli-v1",
-                "execution": "embedded",
+                "execution": "bundled",
                 "format": "PNG",
                 "settings": "OxiPNG 10.1.1, pinned filters, Zopfli 15 iterations",
                 "metadata": "preserve by default; OxiPNG Safe with --strip-metadata",
             },
             {
                 "id": "optipng-v1",
-                "execution": "external-optional",
+                "execution": "bundled-with-external-override",
                 "provider": "optipng",
                 "format": "PNG",
-                "discovery": "CLI capability probe; provider version is not gated",
+                "bundled_settings": "OptiPNG 7.9.1 PNG-only engine, optimization level 2",
+                "override_discovery": "CLI capability probe; provider version is not gated",
                 "arguments": ["-quiet", "-o2", "-out", "CANDIDATE", "--", "INPUT"],
                 "strip_metadata_arguments": [
                     "-quiet",
@@ -277,10 +295,11 @@ def release_manifest(
             },
             {
                 "id": "jpegtran-v1",
-                "execution": "external-optional",
+                "execution": "bundled-with-external-override",
                 "provider": "jpegtran",
                 "format": "JPEG",
-                "discovery": "CLI capability probe; provider version is not gated",
+                "bundled_settings": "MozJPEG coefficient transcode, optimized progressive coding",
+                "override_discovery": "CLI capability probe; provider version is not gated",
                 "applicability": "lossless and numeric quality",
                 "arguments": [
                     "-copy",
@@ -305,10 +324,11 @@ def release_manifest(
             },
             {
                 "id": "mozjpeg-v1",
-                "execution": "external-optional",
+                "execution": "bundled-with-external-override",
                 "provider": "mozjpeg",
                 "format": "JPEG",
-                "discovery": "CLI capability probe; provider version is not gated",
+                "bundled_settings": "MozJPEG RGB or grayscale re-encode, optimized progressive coding",
+                "override_discovery": "CLI capability probe; provider version is not gated",
                 "applicability": "numeric quality only",
                 "arguments": [
                     "-quality",
@@ -320,14 +340,15 @@ def release_manifest(
                     "CANDIDATE",
                     "INPUT",
                 ],
-                "metadata": "preserves saved markers; --strip-metadata adds no argument",
+                "metadata": "bundled implementation preserves opaque markers and handles structural JFIF/Adobe markers without duplicates or blind replay; --strip-metadata omits saved markers; external override uses its native CLI behavior",
             },
             {
                 "id": "jpegli-v1",
-                "execution": "external-optional",
+                "execution": "bundled-with-external-override",
                 "provider": "jpegli",
                 "format": "JPEG",
-                "discovery": "CLI capability probe; provider version is not gated",
+                "bundled_settings": "Jpegli RGB or grayscale re-encode, optimized progressive coding",
+                "override_discovery": "CLI capability probe; provider version is not gated",
                 "applicability": "numeric quality only",
                 "arguments": [
                     "--quality",
@@ -337,7 +358,7 @@ def release_manifest(
                     "INPUT",
                     "CANDIDATE",
                 ],
-                "metadata": "native re-encode; --strip-metadata adds no argument",
+                "metadata": "bundled implementation preserves opaque markers and handles structural JFIF/Adobe markers without duplicates or blind replay; --strip-metadata omits saved markers; external override uses its native CLI behavior",
             },
         ],
         "quality_policy": {

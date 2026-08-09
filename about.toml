@@ -1,4 +1,4 @@
-accepted = ["0BSD", "Apache-2.0", "MIT", "Zlib"]
+accepted = ["0BSD", "Apache-2.0", "BSD-3-Clause", "IJG", "Libpng", "MIT", "Zlib"]
 targets = [
   "x86_64-apple-darwin",
   "x86_64-unknown-linux-gnu",

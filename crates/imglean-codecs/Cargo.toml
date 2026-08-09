@@ -1,0 +1,19 @@
+[package]
+name = "imglean-codecs"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+
+[lints.rust]
+unsafe_code = "deny"
+
+[dependencies]
+jpegli = "=0.1.0"
+libc = "=0.2.189"
+libpng-sys = { version = "=1.1.11", features = ["build", "static-libz"] }
+mozjpeg = { version = "=0.10.13", default-features = false }
+mozjpeg-sys = { version = "=2.2.3", default-features = false, features = ["jpegtran"] }
+
+[build-dependencies]
+cc = "=1.4.1"

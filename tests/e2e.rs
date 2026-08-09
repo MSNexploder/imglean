@@ -28,10 +28,43 @@ fn complete_worker_race_publishes_a_smaller_valid_result() {
     assert_eq!(before.len(), after.len());
     assert_eq!(before.modified().unwrap(), after.modified().unwrap());
     assert!(stdout(&result).contains("photo.png\n"));
-    assert!(stdout(&result).contains("-> oxipng-"));
+    assert!(stdout(&result).contains("-> "));
     assert!(stdout(&result).contains("winner; saved"));
     assert!(stderr(&result).contains("Summary: 1 succeeded"));
     assert_eq!(fs::read_dir(&output_directory).unwrap().count(), 1);
+}
+
+#[test]
+fn bundled_jpeg_strategies_run_through_the_controller() {
+    let directory = TestDirectory::new();
+    let output_directory = directory.create_directory("out");
+    let source = directory.path.join("photo.jpg");
+    fs::write(
+        &source,
+        include_bytes!("corpus/jpeg/v1/accepted/provider-reduction.jpg"),
+    )
+    .unwrap();
+
+    let result = Command::new(env!("CARGO_BIN_EXE_imglean"))
+        .arg("--quality")
+        .arg("80")
+        .arg("--output")
+        .arg(&output_directory)
+        .arg(&source)
+        .output()
+        .unwrap();
+
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    let report = stdout(&result);
+    for strategy in ["jpegtran-v1", "mozjpeg-v1", "jpegli-v1"] {
+        assert!(
+            report.lines().any(|line| {
+                line.contains(strategy) && line.contains(" bytes") && !line.contains("warning:")
+            }),
+            "bundled strategy did not produce a candidate: {strategy}\n{report}"
+        );
+    }
+    assert!(output_directory.join("photo.jpg").is_file());
 }
 
 #[test]

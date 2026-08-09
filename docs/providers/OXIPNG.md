@@ -1,10 +1,10 @@
-# Embedded OxiPNG Strategies
+# Bundled OxiPNG Strategies
 
 The controller's format validator decides candidate acceptance. OxiPNG 10.1.1
 runs only inside the private worker role, with default features disabled except
 the explicitly enabled Zopfli backend.
 
-Both embedded strategies share these pinned `oxipng::Options` values:
+Both bundled strategies share these pinned `oxipng::Options` values:
 
 ```text
 fix_errors: false
@@ -37,5 +37,5 @@ tie-breaking. A valid non-improving candidate is normal.
 
 OxiPNG is MIT-licensed, Zopfli is Apache-2.0, and libdeflate is MIT-licensed
 native code. Release notices, dependency inventory, SBOM, and manifest record
-their exact revisions and enabled Cargo features. No embedded provider
+their exact revisions and enabled Cargo features. No bundled provider
 component initiates a network request or remote-service call.

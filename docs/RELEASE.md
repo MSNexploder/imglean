@@ -49,8 +49,10 @@ the standard-library-only packager and is also recorded.
 ## Qualification
 
 Every target runs the canonical locked formatting, lint, and test gate plus the
-target-native CLI, both embedded strategies, bounded parallel workers,
+target-native CLI, every bundled strategy, bounded parallel workers,
 replacing rename publication, metadata, and packaged-artifact smoke tests.
+Windows builds pin CMake's Ninja generator because the bundled Jpegli wrapper
+expects a single-configuration native-library layout.
 Separate CI jobs build pinned representative OptiPNG, pngquant, MozJPEG,
 libjpeg-turbo jpegtran, and Jpegli revisions, then prove capability discovery
 and real execution on each target. These pins make CI reproducible; runtime
@@ -86,12 +88,13 @@ Each platform archive contains:
 - the release-input manifest; and
 - SHA-256 checksums.
 
-The manifest records stable strategy order, identifiers, quality and metadata policies, worker
-limits, embedded settings, external-provider capability contracts, invocation
-arguments, representative CI revisions, and exact bundled OxiPNG, libdeflater,
-and Zopfli dependency versions. External OptiPNG, pngquant, jpegtran, MozJPEG,
-and Jpegli are neither bundled nor included in the dependency inventory or
-SBOM.
+The manifest records stable strategy order, identifiers, quality and metadata
+policies, worker limits, bundled settings, external-override capability
+contracts, invocation arguments, representative CI revisions, and exact
+bundled OxiPNG, OptiPNG, Cexcept, MozJPEG, Jpegli, Highway, libpng,
+libdeflater, and Zopfli dependency versions. pngquant and explicitly selected
+provider executables are not bundled or included in the dependency inventory
+or SBOM.
 
 Archives do not include an installer, separately installed optimizer, or runtime.
 Release notes state the exact platform boundary and do not imply that one binary

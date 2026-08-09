@@ -37,8 +37,8 @@ Build the smallest reliable CLI that runs applicable image-optimization strategi
 ## Providers and licensing
 
 - Use the vocabulary from `SCOPE.md`: provider, strategy, candidate, and winner.
-- Version 0.6 includes two audited embedded OxiPNG strategies plus explicitly supported external OptiPNG, pngquant, jpegtran, MozJPEG, and Jpegli adapters.
-- Enable every embedded strategy compatible with the active policy by default. Discover explicitly supported external executables during preflight and enable compatible strategies when available; never download or install them.
+- Version 0.6 bundles two audited OxiPNG strategies, OptiPNG, jpegtran, MozJPEG, and Jpegli. pngquant remains an explicitly supported optional external adapter because its license is incompatible with the default Apache-2.0 binary.
+- Enable every bundled strategy compatible with the active policy by default. Discover pngquant during preflight and enable it when available; never download or install providers. An explicit `--provider` path overrides the corresponding bundled implementation for testing or controlled substitution.
 - Resolve an external provider once per invocation, validate its required CLI capabilities without gating a reported version, and distinguish normal automatic absence from failure of a provider the user explicitly requires.
 - Ensure no component of the built-in workflow initiates network requests or remote-service calls.
 - Run providers in separate worker processes for crash isolation and portable byte and elapsed-time control, not as a security or hard memory-containment boundary.
@@ -66,8 +66,8 @@ Use `mise run format` when formatting needs correction. Do not bypass `--locked`
 
 Provider and validator changes require checked-in, versioned, bounded format corpora covering each accepted subset plus malformed, oversized, metadata-bearing, C2PA/XMP-bearing, unchanged, and semantically changed images. Every provider family needs at least one validated size reduction. Input and output changes require tests for batch-preflight atomicity, repeated canonical inputs, source/destination aliases, ASCII name collisions, C2PA path transformations, destination appearance races, capture-time semantics, interruption on both sides of publication, hard-link publication and unsupported filesystems, platform metadata behavior, larger candidates, optimizing-provider failures, baseline selection, current-run temporary-path cleanup, refusal to delete earlier artifacts, diagnostics escaping and routing, and filesystem failures.
 
-Every registered embedded strategy must execute directly and through the
-controller in CI. Every supported external adapter must run against a pinned
+Every registered bundled strategy must execute directly and through the
+controller in CI. Every supported external adapter or override must run against a pinned
 representative provider revision on every target where support is claimed, with
 additional coverage for absence, capability mismatch, failure, timeout,
 malformed output, and larger output. `--all-features` compilation alone is not

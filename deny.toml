@@ -10,7 +10,7 @@ all-features = true
 ignore = []
 
 [licenses]
-allow = ["0BSD", "Apache-2.0", "MIT", "Zlib"]
+allow = ["0BSD", "Apache-2.0", "BSD-3-Clause", "IJG", "Libpng", "MIT", "Zlib"]
 confidence-threshold = 0.93
 
 [licenses.private]

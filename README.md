@@ -22,13 +22,13 @@ imglean --output ./optimized photo.jpg icon.png
 
 The default ordered strategy set is:
 
-1. embedded `oxipng-libdeflate-v1`;
-2. embedded `oxipng-zopfli-v1`;
-3. external `optipng-v1` for PNG;
+1. bundled `oxipng-libdeflate-v1`;
+2. bundled `oxipng-zopfli-v1`;
+3. bundled `optipng-v1` for PNG;
 4. external `pngquant-v1` for PNG at numeric quality;
-5. external `jpegtran-v1` for lossless JPEG optimization;
-6. external `mozjpeg-v1` for JPEG at numeric quality; and
-7. external `jpegli-v1` for JPEG at numeric quality.
+5. bundled `jpegtran-v1` for lossless JPEG optimization;
+6. bundled `mozjpeg-v1` for JPEG at numeric quality; and
+7. bundled `jpegli-v1` for JPEG at numeric quality.
 
 `--quality lossless|1..100` selects the fidelity policy and defaults to
 `lossless`. The two OxiPNG strategies, OptiPNG, and jpegtran remain eligible at
@@ -38,9 +38,10 @@ participate only at numeric quality. pngquant maps `Q` to its native
 still permits palette conversion. MozJPEG and Jpegli receive `Q` as their
 native quality value.
 
-All compatible embedded strategies are enabled by default. An automatically
-missing or incompatible external provider remains visible as `unavailable` but
-is not run. Strategy controls are explicit and repeatable:
+All compatible bundled strategies are enabled by default. pngquant remains an
+optional external strategy because its GPL/commercial licensing is not
+compatible with the default Apache-2.0 binary. Strategy controls are explicit
+and repeatable:
 
 ```sh
 imglean --disable-strategy oxipng-zopfli-v1 --output ./optimized photo.png
@@ -55,25 +56,30 @@ imglean --jobs 1 --output ./optimized photo.png
 imglean --strip-metadata --output ./optimized photo.jpg icon.png
 ```
 
-`--provider` both selects the executable and requires its adapter. ImgLean never
-downloads, installs, or updates external providers. Run `imglean --help` for the
-complete CLI surface.
+`--provider` overrides the bundled implementation for OptiPNG, jpegtran,
+MozJPEG, or Jpegli; for pngquant it selects the external implementation. It
+also requires that adapter to pass its capability probe. ImgLean never
+downloads, installs, or updates external providers. Run `imglean --help` for
+the complete CLI surface.
 
-External discovery uses `PATH` or an explicit `--provider NAME PATH` on every
-platform. ImgLean verifies the required CLI capabilities instead of accepting
-or rejecting release-number strings. CI pins representative upstream revisions
-for reproducibility, but runtime compatibility is capability-based. An
-unavailable provider is reported as `unavailable`; at lossless quality pngquant,
-MozJPEG, and Jpegli are `not applicable` and are not probed. jpegtran remains
+Automatic `PATH` discovery is used for the unbundled pngquant strategy. Explicit
+`--provider NAME PATH` overrides are supported on every platform for all five
+provider names. ImgLean verifies required CLI capabilities instead of accepting
+or rejecting release-number strings. CI pins representative external revisions
+for reproducibility, but runtime compatibility is capability-based. At lossless
+quality pngquant, MozJPEG, and Jpegli are `not applicable`; jpegtran remains
 applicable at lossless and numeric quality.
 
 `--strip-metadata` allows metadata removal and asks strategies with a native
 control to use it. OxiPNG uses its safe strip mode, OptiPNG strips all PNG
-metadata it recognizes, jpegtran copies no extra JPEG markers, and pngquant
-already strips optional metadata. Jpegli's native decode/re-encode path does
-not copy source application markers. MozJPEG exposes no compatible removal
-control and may preserve them, but remains eligible. No otherwise-applicable
-strategy is excluded solely because it cannot strip metadata. ImgLean does not
+metadata it recognizes, bundled jpegtran copies no extra JPEG markers, and
+pngquant already strips optional metadata. Bundled MozJPEG and Jpegli preserve
+opaque JPEG application/comment markers by default, carry JFIF density forward,
+keep a single JFIF marker, and avoid replaying source Adobe markers onto the new
+encoding. They omit saved markers when stripping is requested.
+External overrides retain their own documented native behavior. No
+otherwise-applicable strategy is excluded solely because it cannot strip
+metadata. ImgLean does not
 implement a separate metadata stripper or verify that all metadata is gone.
 The unchanged source baseline still participates and can win, so this option is
 best effort rather than a guarantee that the selected output contains no
@@ -91,9 +97,11 @@ still rejects malformed, animated, wrong-sized, C2PA, and XMP candidates.
 It also accepts bounded 8-bit baseline, extended sequential, and progressive
 Huffman JPEGs, requires a complete decode and matching candidate dimensions,
 and refuses standard XMP plus APP11. Other accepted JPEG application and comment
-segments are opaque. Numeric JPEG strategies may therefore drop Exif
-orientation and other application metadata; use the default lossless policy
-when that metadata must be preserved. See the [PNG](docs/contracts/PNG.md) and
+segments are opaque. Bundled numeric JPEG strategies preserve their payloads by
+default while safely handling structural encoding markers, but external overrides
+may drop Exif orientation and other application
+metadata. Use the default lossless policy when exact sample preservation is
+required. See the [PNG](docs/contracts/PNG.md) and
 [JPEG](docs/contracts/JPEG.md) contracts for the exact boundaries.
 
 Exit statuses are `0` for clean success, `3` when all outputs succeed despite
@@ -109,7 +117,7 @@ photo.png
      baseline                 109,592 bytes
      oxipng-libdeflate-v1     109,104 bytes
   -> oxipng-zopfli-v1         108,928 bytes  winner; saved 664 bytes (0.61%)
-     optipng-v1               unavailable
+     optipng-v1               109,088 bytes
      pngquant-v1              not applicable
      output                   /path/to/optimized/photo.png
 ```
@@ -136,12 +144,15 @@ mise run check
 
 `mise run check` verifies formatting, runs Clippy for all targets and features
 with warnings denied, and runs the complete locked test suite. Release work also
-runs `mise run audit`, `mise run notices`, and `mise run sbom`.
+runs `mise run audit`, `mise run notices`, and `mise run sbom`. Windows source
+builds require CMake and Ninja; set `CMAKE_GENERATOR=Ninja` so the pinned Jpegli
+wrapper produces the static libraries in its expected single-configuration
+layout. CI and release workflows set this explicitly.
 
-CI executes both embedded strategies directly and through the controller on all
-release targets. Separate native jobs build pinned representative revisions of
-all five external providers and require real reductions through capability
-discovery and the complete controller path.
+CI executes every bundled strategy directly and through the controller on all
+release targets. Separate native jobs build pinned representative executable
+overrides for OptiPNG, pngquant, jpegtran, MozJPEG, and Jpegli and require real
+reductions through capability discovery and the complete controller path.
 
 ## Documentation
 

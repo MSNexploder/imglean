@@ -1,38 +1,29 @@
-# External jpegtran Strategy
+# Bundled jpegtran Strategy
 
-`jpegtran-v1` uses a separately installed compatible `jpegtran` executable for
-JPEG inputs at lossless or numeric quality. It is not bundled, downloaded,
-installed, updated, or included in ImgLean's SBOM.
+`jpegtran-v1` is enabled by default for JPEG input at lossless and numeric
+quality. It uses the coefficient-transcoding API bundled by `mozjpeg-sys`: the
+source coefficients are copied without pixel decoding or requantization,
+Huffman coding is optimized, and progressive scans are written. This preserves
+the strategy's lossless sample semantics while allowing a smaller byte stream.
 
-Discovery runs `jpegtran -help` and requires every CLI capability used by the
-adapter: copying all or no extra markers, Huffman optimization, progressive
-output, strict input handling, and an explicit output path. The historical help path
-exits with status 1 after printing valid help; ImgLean accepts that status only
-when all required markers are present. No release number is requested, parsed,
-or gated.
+By default the bundled implementation copies recognized application and comment
+markers. With `--strip-metadata`, it requests no marker copying. All native
+calls live behind the audited `imglean-codecs` FFI boundary and run only in the
+short-lived provider worker; fatal codec errors therefore cannot crash the
+controller. The controller still applies the common JPEG candidate gate.
 
-The adapter invokes:
+An explicit `--provider jpegtran PATH` replaces the bundled implementation. The
+external adapter capability-probes the executable and invokes:
 
 ```text
 jpegtran -copy all -optimize -progressive -strict -outfile CANDIDATE PRIVATE_INPUT
 ```
 
-With `--strip-metadata`, `-copy none` replaces `-copy all`.
+With metadata stripping, `-copy none` replaces `-copy all`. Provider release
+text is not a compatibility gate.
 
-jpegtran transcodes JPEG coefficients without decoding and requantizing image
-samples. It copies all recognized extra markers by default and omits them when
-stripping is requested. It optimizes Huffman tables and writes progressive
-scans. The controller independently applies the common JPEG
-candidate gate and keeps the result only when it is strictly smaller than the
-current winner.
-
-jpegtran-compatible implementations also expose linkable native coefficient
-APIs. ImgLean uses the maintained CLI because it preserves the existing process
-crash/timeout boundary without unsafe FFI or a native build dependency. The
-provider remains separately installed software outside ImgLean's bundled
-dependency inventory. CI builds jpegtran from the pinned representative
-MozJPEG and libjpeg-turbo revisions in `ci/mozjpeg-revision.txt` and
-`ci/libjpeg-turbo-revision.txt` on every release target, requires a real
-reduction, and verifies that an Exif marker is retained.
-The same real-provider test verifies that the marker is omitted when stripping
-is requested.
+The bundled implementation shares MozJPEG's permissive IJG, BSD-3-Clause, and
+zlib licensing. Release notices and inventories include its native source.
+Native CI executes the bundled strategy directly and through the controller and
+tests pinned MozJPEG and libjpeg-turbo external overrides on every release
+target.

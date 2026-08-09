@@ -10,41 +10,43 @@ ImgLean has one public controller and two provider execution forms:
 - The **controller** parses the CLI, resolves strategies, preflights the complete
   batch, validates sources and candidates, selects winners, and is the only
   component allowed to publish outputs.
-- An **embedded worker** is a short-lived private role of the same executable.
-  It runs one OxiPNG strategy against one controller-created private input.
-- A supported **external provider** is a separately installed executable invoked
-  directly with the same private-input/private-candidate boundary.
+- A **bundled worker** is a short-lived private role of the same executable. It
+  runs one linked OxiPNG, OptiPNG, jpegtran, MozJPEG, or Jpegli strategy against
+  one controller-created private input.
+- A supported **external provider** is a separately installed executable used
+  for pngquant or as an explicit override, with the same private-input/private-
+  candidate boundary.
 
 Process separation isolates crashes and enables bounded diagnostics and elapsed
 time supervision. It is not a security sandbox or portable hard memory limit;
 providers run with the user's authority.
 
-Integration form is assessed in the order embedded, linked, then callable.
-OxiPNG has a maintained safe Rust embedding and is embedded. jpegtran,
-MozJPEG, and Jpegli expose native linkable APIs, but linking them would add
-unsafe FFI, native build chains, and in-process crash behavior without
-improving the current CLI contract, so version 0.6 uses their maintained
-command-line front ends. OptiPNG and pngquant remain callable for the same
-worker-isolation boundary.
+Integration form is assessed in the order safely embeddable, linkable, then
+callable. OxiPNG uses its safe Rust API. OptiPNG uses a narrow PNG-only wrapper
+around its vendored engine. MozJPEG and Jpegli use Rust-facing native wrappers,
+and jpegtran uses MozJPEG's coefficient API behind one audited FFI boundary.
+All linked code runs only in the disposable worker process, so linking does not
+remove crash and timeout isolation. pngquant remains external because of its
+GPL/commercial licensing boundary.
 
 ## Registry and discovery
 
 The versioned registry fixes strategy identity and order:
 
-1. `oxipng-libdeflate-v1` — embedded;
-2. `oxipng-zopfli-v1` — embedded;
-3. `optipng-v1` — external OptiPNG for PNG when available;
+1. `oxipng-libdeflate-v1` — bundled;
+2. `oxipng-zopfli-v1` — bundled;
+3. `optipng-v1` — bundled OptiPNG for PNG;
 4. `pngquant-v1` — external pngquant for PNG at numeric quality;
-5. `jpegtran-v1` — external jpegtran for lossless JPEG optimization;
-6. `mozjpeg-v1` — external MozJPEG for JPEG at numeric quality;
-7. `jpegli-v1` — external Jpegli for JPEG at numeric quality.
+5. `jpegtran-v1` — bundled lossless JPEG coefficient optimization;
+6. `mozjpeg-v1` — bundled MozJPEG for JPEG at numeric quality;
+7. `jpegli-v1` — bundled Jpegli for JPEG at numeric quality.
 
-Compatible embedded strategies are enabled unless disabled. External discovery
-resolves a configured executable or the first supported executable on `PATH` on
-every platform. It probes each applicable provider once under a short deadline
-and retains its canonical path for the invocation. Probes check CLI identity and
-the behavior-affecting options used by the adapter; provider version text is not
-a compatibility boundary. Numeric quality leaves all lossless strategies
+Compatible bundled strategies are enabled unless disabled. A configured
+external executable overrides its bundled implementation. Without an override,
+only the unbundled pngquant strategy searches `PATH`. External providers are
+probed once under a short deadline and retained by canonical path for the
+invocation. Probes check CLI identity and behavior-affecting capabilities;
+provider version text is not a compatibility boundary. Numeric quality leaves all lossless strategies
 applicable and enables the lossy providers; lossless quality marks them not
 applicable without probing. Automatic absence or capability mismatch skips a
 strategy; an explicitly required provider turns the same
@@ -110,7 +112,7 @@ diagnostics, and monitored elapsed time. It does not promise hard address-space,
 CPU, descendant-process, hostile path-race, crash-cleanup, or machine-wide
 resource containment.
 
-The CLI may override the bounded per-strategy worker deadline. Embedded OxiPNG
+The CLI may override the bounded per-strategy worker deadline. Bundled OxiPNG
 receives a shorter internal deadline so the controller retains cleanup time;
 validation, discovery, and invocation-wide deadlines remain separate.
 

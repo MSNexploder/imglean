@@ -1,33 +1,28 @@
-# External OptiPNG Strategy
+# Bundled OptiPNG Strategy
 
-`optipng-v1` supports a separately installed capability-compatible OptiPNG executable.
-It is not bundled, downloaded, installed, updated, or included in ImgLean's SBOM.
-Its resolved canonical path is recorded for each invocation in which it is
-enabled. Discovery verifies the required CLI identity and options; version text
-is not a compatibility gate.
+`optipng-v1` bundles the OptiPNG 7.9.1 optimization engine and is enabled by
+default for PNG input. The native source is pinned in `imglean-codecs`, limited
+to the PNG read path required by ImgLean, and linked with a pinned bundled
+libpng/zlib. It runs only inside the short-lived provider worker.
 
-The adapter invokes:
+The wrapper initializes OptiPNG with optimization level 2, preserves the input
+interlace mode, writes only to the private candidate path, and does not request
+error repair. With `--strip-metadata`, it enables OptiPNG's native `strip_all`
+setting. The controller validates the private source before execution and
+independently applies the common PNG candidate gate afterward.
+
+An explicit `--provider optipng PATH` replaces the bundled engine for that
+invocation. The external adapter capability-probes the executable and invokes:
 
 ```text
 optipng -quiet -o2 -out CANDIDATE -- PRIVATE_INPUT
 ```
 
-With `--strip-metadata`, it invokes:
+With metadata stripping it adds `-strip all`. Provider release text is not a
+compatibility gate.
 
-```text
-optipng -quiet -o2 -strip all -out CANDIDATE -- PRIVATE_INPUT
-```
-
-Optimization level 2 is explicit. The adapter never passes `-fix`, an
-interlace conversion, or an in-place destination, so error repair, forced
-interlace changes, and source replacement are not requested. Metadata stripping
-is disabled by default and delegated to OptiPNG's native `-strip all` behavior
-when requested.
-ImgLean validates the private source before invocation and independently applies
-its bounded candidate gate afterward.
-
-OptiPNG is zlib-licensed. Because the user supplies it as a separate executable,
-its distribution and dependency obligations remain outside the ImgLean binary.
-Native CI nevertheless downloads a checksum-pinned representative official
-artifact or source revision and tests the complete adapter on every supported
-release target.
+OptiPNG and its Cexcept helper are zlib-licensed; libpng and zlib use their
+permissive licenses. Exact sources and required notices are recorded in the
+dependency lock, release manifest, SBOM, and third-party notices. Native CI
+executes the bundled strategy directly and through the controller, and also
+tests a pinned representative external override on every release target.

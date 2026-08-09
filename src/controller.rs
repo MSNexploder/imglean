@@ -733,8 +733,8 @@ mod tests {
             .into_iter()
             .map(|id| RegistryEntry {
                 id,
-                state: RegistryState::Runnable(if StrategyId::EMBEDDED.contains(&id) {
-                    Execution::Embedded
+                state: RegistryState::Runnable(if StrategyId::BUNDLED.contains(&id) {
+                    Execution::Bundled
                 } else {
                     Execution::External {
                         executable: PathBuf::from("unused"),
@@ -815,8 +815,8 @@ mod tests {
             .into_iter()
             .map(|id| RegistryEntry {
                 id,
-                state: if StrategyId::EMBEDDED.contains(&id) {
-                    RegistryState::Runnable(Execution::Embedded)
+                state: if StrategyId::BUNDLED.contains(&id) {
+                    RegistryState::Runnable(Execution::Bundled)
                 } else {
                     RegistryState::Runnable(Execution::External {
                         executable: PathBuf::from("unused"),
@@ -879,7 +879,7 @@ mod tests {
         let registry = vec![
             RegistryEntry {
                 id: StrategyId::OxipngLibdeflateV1,
-                state: RegistryState::Runnable(Execution::Embedded),
+                state: RegistryState::Runnable(Execution::Bundled),
             },
             RegistryEntry {
                 id: StrategyId::OxipngZopfliV1,
@@ -925,7 +925,7 @@ mod tests {
             .into_iter()
             .map(|id| RegistryEntry {
                 id,
-                state: RegistryState::Runnable(Execution::Embedded),
+                state: RegistryState::Runnable(Execution::Bundled),
             })
             .collect();
         let barrier = Barrier::new(2);
@@ -982,11 +982,11 @@ mod tests {
         let source = directory.path.join("source.png");
         let winner = valid_png();
         fs::write(&source, with_empty_idats(&winner, 2)).unwrap();
-        let registry = StrategyId::EMBEDDED
+        let registry = StrategyId::BUNDLED
             .into_iter()
             .map(|id| RegistryEntry {
                 id,
-                state: RegistryState::Runnable(Execution::Embedded),
+                state: RegistryState::Runnable(Execution::Bundled),
             })
             .collect();
         let mut arguments = arguments(output, vec![source]);
@@ -1128,11 +1128,11 @@ mod tests {
         let output = directory.create_directory("out");
         let source = directory.path.join("source.png");
         fs::write(&source, valid_png()).unwrap();
-        let strategies = StrategyId::EMBEDDED
+        let strategies = [StrategyId::OxipngLibdeflateV1, StrategyId::OxipngZopfliV1]
             .into_iter()
             .map(|id| RegistryEntry {
                 id,
-                state: RegistryState::Runnable(Execution::Embedded),
+                state: RegistryState::Runnable(Execution::Bundled),
             })
             .collect();
         let attempts = AtomicUsize::new(0);
@@ -1238,11 +1238,11 @@ mod tests {
         let output = directory.create_directory("out");
         let source = directory.path.join("source.png");
         fs::write(&source, valid_png()).unwrap();
-        let strategies = StrategyId::EMBEDDED
+        let strategies = [StrategyId::OxipngLibdeflateV1, StrategyId::OxipngZopfliV1]
             .into_iter()
             .map(|id| RegistryEntry {
                 id,
-                state: RegistryState::Runnable(Execution::Embedded),
+                state: RegistryState::Runnable(Execution::Bundled),
             })
             .collect();
         let mut stdout = Vec::new();
@@ -1286,11 +1286,11 @@ mod tests {
         let source = directory.path.join("source.png");
         let bytes = valid_png();
         fs::write(&source, &bytes).unwrap();
-        let strategies = StrategyId::EMBEDDED
+        let strategies = [StrategyId::OxipngLibdeflateV1, StrategyId::OxipngZopfliV1]
             .into_iter()
             .map(|id| RegistryEntry {
                 id,
-                state: RegistryState::Runnable(Execution::Embedded),
+                state: RegistryState::Runnable(Execution::Bundled),
             })
             .collect();
         let mut stdout = Vec::new();
@@ -1365,7 +1365,7 @@ mod tests {
     fn test_registry() -> Vec<RegistryEntry> {
         vec![RegistryEntry {
             id: crate::strategy::StrategyId::OxipngLibdeflateV1,
-            state: RegistryState::Runnable(crate::strategy::Execution::Embedded),
+            state: RegistryState::Runnable(crate::strategy::Execution::Bundled),
         }]
     }
 

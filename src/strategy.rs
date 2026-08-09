@@ -30,7 +30,14 @@ impl StrategyId {
         Self::JpegliV1,
     ];
 
-    pub const EMBEDDED: [Self; 2] = [Self::OxipngLibdeflateV1, Self::OxipngZopfliV1];
+    pub const BUNDLED: [Self; 6] = [
+        Self::OxipngLibdeflateV1,
+        Self::OxipngZopfliV1,
+        Self::OptipngV1,
+        Self::JpegtranV1,
+        Self::MozjpegV1,
+        Self::JpegliV1,
+    ];
 
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -81,6 +88,7 @@ pub enum ProviderId {
 }
 
 impl ProviderId {
+    #[cfg(test)]
     pub const ALL: [Self; 5] = [
         Self::Optipng,
         Self::Pngquant,
@@ -117,6 +125,17 @@ impl ProviderId {
             Self::Jpegtran => StrategyId::JpegtranV1,
             Self::Mozjpeg => StrategyId::MozjpegV1,
             Self::Jpegli => StrategyId::JpegliV1,
+        }
+    }
+
+    pub const fn for_strategy(strategy: StrategyId) -> Option<Self> {
+        match strategy {
+            StrategyId::OptipngV1 => Some(Self::Optipng),
+            StrategyId::PngquantV1 => Some(Self::Pngquant),
+            StrategyId::JpegtranV1 => Some(Self::Jpegtran),
+            StrategyId::MozjpegV1 => Some(Self::Mozjpeg),
+            StrategyId::JpegliV1 => Some(Self::Jpegli),
+            StrategyId::OxipngLibdeflateV1 | StrategyId::OxipngZopfliV1 => None,
         }
     }
 
@@ -242,7 +261,7 @@ impl fmt::Display for Strategy {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Execution {
-    Embedded,
+    Bundled,
     External { executable: PathBuf },
 }
 
@@ -258,32 +277,30 @@ impl DiscoveryError {
 }
 
 pub fn resolve(selection: &Selection) -> Result<Vec<RegistryEntry>, DiscoveryError> {
-    let mut registry = StrategyId::EMBEDDED
-        .into_iter()
-        .map(|id| RegistryEntry {
-            id,
-            state: if selection.disabled.contains(&id) {
-                RegistryState::Disabled
-            } else {
-                RegistryState::Runnable(Execution::Embedded)
-            },
-        })
-        .collect::<Vec<_>>();
-
-    for provider in ProviderId::ALL {
-        let id = provider.strategy();
+    let mut registry = Vec::with_capacity(StrategyId::ALL.len());
+    for id in StrategyId::ALL {
         let state = if selection.disabled.contains(&id) {
             RegistryState::Disabled
         } else if id.needs_numeric_quality() && selection.quality == Quality::Lossless {
             RegistryState::NotApplicable
         } else {
+            let provider = ProviderId::for_strategy(id);
             let configured = selection
                 .provider_paths
                 .iter()
-                .find(|path| path.provider == provider)
+                .find(|path| Some(path.provider) == provider)
                 .map(|path| path.path.as_path());
             let required = selection.required.contains(&id);
-            match discover(provider, configured) {
+            let discovered = if let (Some(provider), Some(configured)) = (provider, configured) {
+                discover(provider, Some(configured))
+            } else if StrategyId::BUNDLED.contains(&id) {
+                Ok(Some(Execution::Bundled))
+            } else if let Some(provider) = provider {
+                discover(provider, None)
+            } else {
+                Ok(None)
+            };
+            match discovered {
                 Ok(Some(execution)) => RegistryState::Runnable(execution),
                 Ok(None) if required => {
                     return discovery(&format!("required strategy {id} is unavailable"));
@@ -472,6 +489,28 @@ mod tests {
                 registry.iter().find(|entry| entry.id == id).unwrap().state,
                 RegistryState::NotApplicable
             );
+        }
+    }
+
+    #[test]
+    fn bundled_strategies_are_available_without_provider_discovery() {
+        for quality in [Quality::Lossless, Quality::Numeric(80)] {
+            let registry = resolve(&Selection {
+                quality,
+                ..Selection::default()
+            })
+            .unwrap();
+            for id in StrategyId::BUNDLED {
+                let expected = if id.needs_numeric_quality() && quality == Quality::Lossless {
+                    RegistryState::NotApplicable
+                } else {
+                    RegistryState::Runnable(Execution::Bundled)
+                };
+                assert_eq!(
+                    registry.iter().find(|entry| entry.id == id).unwrap().state,
+                    expected
+                );
+            }
         }
     }
 

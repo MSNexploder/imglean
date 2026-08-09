@@ -1,34 +1,31 @@
-# External Jpegli Strategy
+# Bundled Jpegli Strategy
 
-`jpegli-v1` uses a separately installed Jpegli `cjpegli` executable for JPEG
-inputs at numeric quality. It is not bundled, downloaded, installed, updated,
-or included in ImgLean's SBOM.
+`jpegli-v1` is enabled by default for JPEG inputs at numeric quality. ImgLean
+bundles the BSD-3-Clause `jpegli` 0.1.0 wrapper, whose `jpegli-sys` package
+contains the namespaced Jpegli 0.10.2 native source. Namespaced symbols allow it
+to coexist with MozJPEG in one executable. The validated JPEG is decoded to
+grayscale or RGB samples and re-encoded with the native quality value,
+progressive scans, and optimized entropy coding.
 
-Jpegli does not expose a stable CLI version command. Discovery therefore runs
-`cjpegli --help` and requires advertised JPEG input, JPEG output, numeric
-quality, and progressive-level capabilities. No release number is parsed or
-gated.
+Opaque application and comment markers are copied by default. The existing
+JFIF marker is kept once, while a source Adobe marker is not replayed onto the
+new encoding. With `--strip-metadata`, the bundled strategy omits saved markers.
+This remains provider-native best effort, and the common JPEG candidate gate
+independently validates the result. Native code runs only inside the provider
+worker.
 
-For `--quality Q`, the adapter invokes:
+The Rust wrapper is older than current upstream Jpegli, so it is deliberately
+pinned as part of this versioned strategy rather than presented as a floating
+latest release. An explicit `--provider jpegli PATH` can test or use a newer
+compatible `cjpegli` without rebuilding ImgLean. The override is capability-
+probed and invoked as:
 
 ```text
 cjpegli --quality Q --progressive_level 2 PRIVATE_INPUT CANDIDATE
 ```
 
-The native quality value is passed directly and progressive level 2 is pinned.
-The controller independently applies the common JPEG candidate gate and keeps
-the result only when it is strictly smaller than the current winner.
-
-The CLI re-encodes image samples and does not promise to preserve Exif
-orientation or other application metadata. Version 0.6 deliberately treats
-that metadata as opaque and permits this behavior only after the user selects
-numeric JPEG quality. `--strip-metadata` maps to this existing native re-encode
-behavior and adds no separate command argument; CI verifies that a source Exif
-marker is not copied.
-
-Jpegli also exposes libjpeg-compatible and native C++ libraries. ImgLean uses the
-maintained CLI because it preserves the existing process crash/timeout boundary
-without unsafe FFI or a bundled C++ build. Jpegli is BSD-3-Clause licensed; as
-separately installed software it remains outside ImgLean's bundled dependency
-inventory. CI builds the pinned representative commit recorded in
-`ci/jpegli-revision.txt` on every release target and requires a real reduction.
+Provider release text is not a compatibility gate. Jpegli and its wrapper are
+BSD-3-Clause; the bundled Highway dependency is Apache-2.0. Exact revisions,
+the JPEG XL patent grant, and required notices are included in release records.
+Native CI executes the bundled strategy directly and through the controller and
+tests a pinned representative external override on every release target.

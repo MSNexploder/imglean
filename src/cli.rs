@@ -22,14 +22,14 @@ Options:\n\
   --strip-metadata         Request native metadata stripping (best effort)\n\
   --disable-strategy ID    Disable a strategy; may be repeated\n\
   --require-strategy ID    Require an available strategy; may be repeated\n\
-  --provider NAME PATH     Use and require a supported provider executable\n\
+  --provider NAME PATH     Override with and require a provider executable\n\
   --help                   Print help\n\
   --version                Print version\n\
 \n\
 Strategy IDs (default order):\n\
   oxipng-libdeflate-v1, oxipng-zopfli-v1, optipng-v1, pngquant-v1,\n\
   jpegtran-v1, mozjpeg-v1, jpegli-v1\n\
-Supported external providers:\n\
+Supported external providers and overrides:\n\
   optipng, pngquant, jpegtran, mozjpeg, jpegli (checked by CLI capability)\n"
 );
 

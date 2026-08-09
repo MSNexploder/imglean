@@ -12,7 +12,7 @@ applicable strategy and writes the smallest candidate accepted under one common
 policy. The validated original participates as the first candidate, so every
 successful output is no larger than its source.
 
-The embedded workflow is offline and ships in one target-specific executable.
+The bundled workflow is offline and ships in one target-specific executable.
 Supported external executables may augment it when already installed; ImgLean
 does not download or manage them. The default distribution is permissively
 licensed. This document is the authoritative product boundary.
@@ -35,10 +35,10 @@ licensed. This document is the authoritative product boundary.
 - Publish only a complete validated result; replace only the requested regular
   output entry and never an input alias.
 - Report every input outcome and the invocation outcome.
-- Enable compatible embedded strategies by default.
+- Enable compatible bundled strategies by default.
 - Keep strategy identifiers, order, provider capabilities, options, and limits
   explicit, versioned, tested, and recorded in release artifacts.
-- Keep the embedded workflow offline and permissively redistributable.
+- Keep the bundled workflow offline and permissively redistributable.
 - Require deliberate numeric quality selection before enabling a
   fidelity-reducing strategy.
 
@@ -65,14 +65,14 @@ strategy configuration.
 
 The ordered, format-specific registry is:
 
-1. OxiPNG 10.1.1 with libdeflater level 11, embedded;
-2. OxiPNG 10.1.1 with pinned Zopfli settings, embedded;
-3. OptiPNG at optimization level 2, external and optional;
+1. OxiPNG 10.1.1 with libdeflater level 11, bundled;
+2. OxiPNG 10.1.1 with pinned Zopfli settings, bundled;
+3. OptiPNG at optimization level 2, bundled;
 4. pngquant at numeric quality, external and optional;
 5. jpegtran with configurable native marker copying, Huffman optimization, and
-   progressive output, external and optional;
-6. MozJPEG at numeric quality, external and optional; and
-7. Jpegli at numeric quality, external and optional.
+   progressive output, bundled;
+6. MozJPEG at numeric quality, bundled; and
+7. Jpegli at numeric quality, bundled.
 
 `--quality lossless|1..100` defaults to `lossless`. jpegtran and the PNG
 lossless strategies remain applicable at numeric quality. `pngquant-v1`,
@@ -88,10 +88,12 @@ baseline, implement a controller-side stripper, or independently verify that
 metadata was removed. Because the baseline remains eligible and can win, the
 option is explicitly best effort and does not guarantee a metadata-free output.
 
-Both embedded strategies are enabled by default. External providers are
-discovered on `PATH` or supplied with `--provider NAME PATH` on every platform.
-The executable must pass its adapter's bounded CLI capability probe; reported
-release numbers are neither required nor gated. Automatic absence or capability mismatch is normal;
+All bundled strategies are enabled by default when applicable. The unbundled
+pngquant provider is discovered on `PATH`. `--provider NAME PATH` can instead
+select an external executable for any provider-backed strategy, including as an
+override of a bundled implementation. The executable must pass its adapter's
+bounded CLI capability probe; reported release numbers are neither required nor
+gated. Automatic absence or capability mismatch is normal;
 an explicitly required or configured provider that is unavailable,
 incompatible, or not applicable fails preflight before output creation.
 Provider execution failure warns, excludes that candidate, and leaves the

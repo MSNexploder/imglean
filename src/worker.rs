@@ -10,11 +10,12 @@ use oxipng::{Deflater, FilterStrategy, Options, StripChunks, ZopfliOptions, inde
 
 use crate::artifacts::Artifacts;
 use crate::diagnostics::escape_worker_text;
+use crate::jpeg::validate_source as validate_jpeg_source;
 use crate::limits::{
     LIMITS_VERSION, MAX_CANDIDATE_BYTES, MAX_RECONSTRUCTED_BYTES, MAX_SOURCE_BYTES,
     MAX_STRATEGY_TIMEOUT_SECONDS, MAX_TEMPORARY_BYTES, MIN_OXIPNG_TIMEOUT, OXIPNG_CLEANUP_RESERVE,
 };
-use crate::png::validate_source;
+use crate::png::validate_source as validate_png_source;
 use crate::process::{self, Capture};
 use crate::strategy::{Execution, Quality, Strategy, StrategyId};
 
@@ -130,7 +131,7 @@ pub fn run_strategy(
             Some(detail) => format!("worker failed: {detail}"),
             None => "worker failed".to_owned(),
         })
-    } else if matches!(strategy.execution, Execution::Embedded) && !output.stdout.bytes.is_empty() {
+    } else if matches!(strategy.execution, Execution::Bundled) && !output.stdout.bytes.is_empty() {
         StrategyResult::Warning("worker produced unexpected standard output".to_owned())
     } else {
         read_candidate(&candidate_path)
@@ -149,10 +150,24 @@ fn strategy_command(
     candidate_path: &Path,
 ) -> Result<Command, &'static str> {
     match &strategy.execution {
-        Execution::Embedded => {
+        Execution::Bundled => {
             let executable =
                 std::env::current_exe().map_err(|_| "cannot identify the current executable")?;
+            let directory = private_input
+                .parent()
+                .filter(|path| !path.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."));
+            if candidate_path.parent() != private_input.parent() {
+                return Err("bundled provider paths do not share a directory");
+            }
+            let input_name = private_input
+                .file_name()
+                .ok_or("private input has no file name")?;
+            let candidate_name = candidate_path
+                .file_name()
+                .ok_or("private candidate has no file name")?;
             let mut command = Command::new(executable);
+            command.current_dir(directory);
             command
                 .arg(WORKER_ROLE)
                 .arg(strategy.id.as_str())
@@ -165,8 +180,12 @@ fn strategy_command(
                         .to_string(),
                 )
                 .arg(if strip_metadata { "strip" } else { "preserve" })
-                .arg(private_input)
-                .arg(candidate_path);
+                .arg(match quality {
+                    Quality::Lossless => "lossless".to_owned(),
+                    Quality::Numeric(quality) => quality.to_string(),
+                })
+                .arg(input_name)
+                .arg(candidate_name);
             Ok(command)
         }
         Execution::External { executable, .. } if strategy.id == StrategyId::OptipngV1 => {
@@ -248,13 +267,13 @@ fn strategy_command(
 }
 
 fn run_private(arguments: &[OsString]) -> i32 {
-    if arguments.len() != 8 || arguments[3] != OsStr::new(LIMITS_VERSION) {
+    if arguments.len() != 9 || arguments[3] != OsStr::new(LIMITS_VERSION) {
         return private_error("invalid private worker protocol");
     }
     let Some(strategy) = arguments[2]
         .to_str()
         .and_then(StrategyId::parse)
-        .filter(|strategy| StrategyId::EMBEDDED.contains(strategy))
+        .filter(|strategy| StrategyId::BUNDLED.contains(strategy))
     else {
         return private_error("invalid private worker strategy");
     };
@@ -274,23 +293,70 @@ fn run_private(arguments: &[OsString]) -> i32 {
         Some("preserve") => false,
         _ => return private_error("invalid private worker metadata policy"),
     };
-    let input = Path::new(&arguments[6]);
-    let candidate = Path::new(&arguments[7]);
+    let quality = match arguments[6].to_str() {
+        Some("lossless") => Quality::Lossless,
+        Some(value) => match value.parse::<u8>() {
+            Ok(value @ 1..=100) => Quality::Numeric(value),
+            _ => return private_error("invalid private worker quality"),
+        },
+        None => return private_error("invalid private worker quality"),
+    };
+    let input = Path::new(&arguments[7]);
+    let candidate = Path::new(&arguments[8]);
     let bytes = match read_bounded(input, MAX_SOURCE_BYTES) {
         Ok(bytes) => bytes,
         Err(message) => return private_error(message),
     };
-    if validate_source(&bytes).is_err() {
-        return private_error("private provider input failed PNG validation");
+    let source_is_valid = match strategy.format() {
+        crate::image::ImageFormat::Png => validate_png_source(&bytes).is_ok(),
+        crate::image::ImageFormat::Jpeg => validate_jpeg_source(&bytes).is_ok(),
+    };
+    if !source_is_valid {
+        return private_error("private provider input failed format validation");
     }
-    let options = oxipng_options(
-        strategy,
-        Duration::from_secs(timeout_seconds),
-        strip_metadata,
-    );
-    let optimized = match oxipng::optimize_from_memory(&bytes, &options) {
-        Ok(bytes) => bytes,
-        Err(_) => return private_error("OxiPNG could not optimize the private input"),
+    if strategy == StrategyId::OptipngV1 {
+        return match imglean_codecs::optimize_optipng(input, candidate, strip_metadata) {
+            Ok(()) => 0,
+            Err(()) => private_error("OptiPNG could not optimize the private input"),
+        };
+    }
+    let optimized = match strategy {
+        StrategyId::OxipngLibdeflateV1 | StrategyId::OxipngZopfliV1 => {
+            let options = oxipng_options(
+                strategy,
+                Duration::from_secs(timeout_seconds),
+                strip_metadata,
+            );
+            match oxipng::optimize_from_memory(&bytes, &options) {
+                Ok(bytes) => bytes,
+                Err(_) => return private_error("OxiPNG could not optimize the private input"),
+            }
+        }
+        StrategyId::JpegtranV1 => match imglean_codecs::optimize_jpegtran(&bytes, strip_metadata) {
+            Ok(bytes) => bytes,
+            Err(()) => return private_error("jpegtran could not optimize the private input"),
+        },
+        StrategyId::MozjpegV1 => {
+            let Some(quality) = quality.numeric() else {
+                return private_error("MozJPEG requires numeric quality");
+            };
+            match imglean_codecs::optimize_mozjpeg(&bytes, quality, strip_metadata) {
+                Ok(bytes) => bytes,
+                Err(()) => return private_error("MozJPEG could not optimize the private input"),
+            }
+        }
+        StrategyId::JpegliV1 => {
+            let Some(quality) = quality.numeric() else {
+                return private_error("Jpegli requires numeric quality");
+            };
+            match imglean_codecs::optimize_jpegli(&bytes, quality, strip_metadata) {
+                Ok(bytes) => bytes,
+                Err(()) => return private_error("Jpegli could not optimize the private input"),
+            }
+        }
+        StrategyId::OptipngV1 | StrategyId::PngquantV1 => {
+            unreachable!("handled or external strategy")
+        }
     };
     if optimized.len() as u64 > MAX_CANDIDATE_BYTES {
         return private_error("OxiPNG candidate exceeds the candidate-byte limit");
@@ -326,7 +392,7 @@ fn oxipng_options(strategy: StrategyId, timeout: Duration, strip_metadata: bool)
         | StrategyId::JpegtranV1
         | StrategyId::MozjpegV1
         | StrategyId::JpegliV1 => {
-            unreachable!("external strategies do not use OxiPNG options")
+            unreachable!("other strategies do not use OxiPNG options")
         }
     };
     Options {
@@ -441,6 +507,7 @@ fn private_error(message: &str) -> i32 {
 mod tests {
     use std::io::Write as _;
     use std::path::PathBuf;
+    use std::sync::Mutex;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use flate2::Compression;
@@ -450,6 +517,7 @@ mod tests {
     use crate::limits::DEFAULT_STRATEGY_TIMEOUT;
 
     static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+    static BUNDLED_PROVIDER_TEST: Mutex<()> = Mutex::new(());
 
     #[test]
     fn options_pin_every_policy_boundary() {
@@ -495,12 +563,23 @@ mod tests {
     }
 
     #[test]
-    fn embedded_strategies_produce_candidates() {
+    fn every_bundled_strategy_produces_a_candidate() {
+        let _provider_guard = BUNDLED_PROVIDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let directory = test_directory();
-        let source = compressible_png();
-        for strategy in StrategyId::EMBEDDED {
-            let input = directory.join(format!("{}-input.png", strategy.as_str()));
-            let candidate_path = directory.join(format!("{}-candidate.png", strategy.as_str()));
+        for strategy in StrategyId::BUNDLED {
+            let (source, extension) = match strategy.format() {
+                crate::image::ImageFormat::Png => (compressible_png(), "png"),
+                crate::image::ImageFormat::Jpeg => (
+                    include_bytes!("../tests/corpus/jpeg/v1/accepted/provider-reduction.jpg")
+                        .to_vec(),
+                    "jpg",
+                ),
+            };
+            let input = directory.join(format!("{}-input.{extension}", strategy.as_str()));
+            let candidate_path =
+                directory.join(format!("{}-candidate.{extension}", strategy.as_str()));
             fs::write(&input, &source).unwrap();
             let arguments = [
                 OsString::from("imglean"),
@@ -509,22 +588,36 @@ mod tests {
                 OsString::from(LIMITS_VERSION),
                 OsString::from("55"),
                 OsString::from("preserve"),
+                OsString::from("80"),
                 input.into_os_string(),
                 candidate_path.clone().into_os_string(),
             ];
             assert_eq!(run_private(&arguments), 0);
             let candidate = fs::read(candidate_path).unwrap();
             assert!(!candidate.is_empty());
-            assert!(candidate.len() <= source.len());
+            match strategy.format() {
+                crate::image::ImageFormat::Png => {
+                    crate::png::validate_source(&candidate).unwrap();
+                }
+                crate::image::ImageFormat::Jpeg => {
+                    crate::jpeg::validate_source(&candidate).unwrap();
+                }
+            }
         }
         fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
-    fn embedded_strategies_strip_metadata_when_requested() {
+    fn bundled_png_strategies_strip_metadata_when_requested() {
+        let _provider_guard = BUNDLED_PROVIDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let directory = test_directory();
         let source = png_with_text_metadata();
-        for strategy in StrategyId::EMBEDDED {
+        for strategy in StrategyId::BUNDLED
+            .into_iter()
+            .filter(|strategy| strategy.format() == crate::image::ImageFormat::Png)
+        {
             let input = directory.join(format!("{}-strip-input.png", strategy.as_str()));
             let candidate_path =
                 directory.join(format!("{}-strip-candidate.png", strategy.as_str()));
@@ -536,6 +629,7 @@ mod tests {
                 OsString::from(LIMITS_VERSION),
                 OsString::from("55"),
                 OsString::from("strip"),
+                OsString::from("80"),
                 input.into_os_string(),
                 candidate_path.clone().into_os_string(),
             ];
@@ -547,18 +641,78 @@ mod tests {
     }
 
     #[test]
-    fn embedded_worker_receives_the_strategy_timeout_minus_cleanup_reserve() {
+    fn bundled_jpeg_strategies_preserve_or_strip_exif_as_requested() {
+        let _provider_guard = BUNDLED_PROVIDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let directory = test_directory();
+        let source = jpeg_with_exif();
+        for strategy in [
+            StrategyId::JpegtranV1,
+            StrategyId::MozjpegV1,
+            StrategyId::JpegliV1,
+        ] {
+            for (policy, should_preserve) in [("preserve", true), ("strip", false)] {
+                let input = directory.join(format!("{}-{policy}-input.jpg", strategy.as_str()));
+                let candidate =
+                    directory.join(format!("{}-{policy}-candidate.jpg", strategy.as_str()));
+                fs::write(&input, &source).unwrap();
+                let arguments = [
+                    OsString::from("imglean"),
+                    OsString::from(WORKER_ROLE),
+                    OsString::from(strategy.as_str()),
+                    OsString::from(LIMITS_VERSION),
+                    OsString::from("55"),
+                    OsString::from(policy),
+                    OsString::from("80"),
+                    input.into_os_string(),
+                    candidate.clone().into_os_string(),
+                ];
+                assert_eq!(run_private(&arguments), 0);
+                let candidate = fs::read(candidate).unwrap();
+                assert_eq!(
+                    candidate.windows(6).any(|bytes| bytes == b"Exif\0\0"),
+                    should_preserve
+                );
+                assert_eq!(
+                    candidate
+                        .windows(b"imglean-app15".len())
+                        .any(|bytes| bytes == b"imglean-app15"),
+                    should_preserve
+                );
+                if should_preserve && strategy != StrategyId::JpegtranV1 {
+                    assert_eq!(
+                        candidate
+                            .windows(b"JFIF\0".len())
+                            .filter(|bytes| *bytes == b"JFIF\0")
+                            .count(),
+                        1
+                    );
+                    assert!(
+                        !candidate
+                            .windows(b"Adobe\0d\0\0\0\0\0".len())
+                            .any(|bytes| bytes == b"Adobe\0d\0\0\0\0\0")
+                    );
+                }
+                crate::jpeg::validate_source(&candidate).unwrap();
+            }
+        }
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn bundled_worker_receives_the_strategy_timeout_minus_cleanup_reserve() {
         let strategy = Strategy {
             id: StrategyId::OxipngLibdeflateV1,
-            execution: Execution::Embedded,
+            execution: Execution::Bundled,
         };
         let command = strategy_command(
             &strategy,
             Quality::Lossless,
             true,
             Duration::from_secs(90),
-            Path::new("private-input.png"),
-            Path::new("candidate.png"),
+            Path::new("non-ASCII-ä/private-input.png"),
+            Path::new("non-ASCII-ä/candidate.png"),
         )
         .unwrap();
         assert_eq!(
@@ -569,10 +723,12 @@ mod tests {
                 OsStr::new(LIMITS_VERSION),
                 OsStr::new("85"),
                 OsStr::new("strip"),
+                OsStr::new("lossless"),
                 OsStr::new("private-input.png"),
                 OsStr::new("candidate.png"),
             ]
         );
+        assert_eq!(command.get_current_dir(), Some(Path::new("non-ASCII-ä")));
     }
 
     #[test]
@@ -901,6 +1057,22 @@ mod tests {
         push_chunk(&mut png, b"tEXt", b"Comment\0worker integration");
         png.extend_from_slice(&iend);
         png
+    }
+
+    fn jpeg_with_exif() -> Vec<u8> {
+        let source = include_bytes!("../tests/corpus/jpeg/v1/accepted/provider-reduction.jpg");
+        let mut jpeg = source[..2].to_vec();
+        push_jpeg_segment(&mut jpeg, 0xe1, b"Exif\0\0II*\0\x08\0\0\0\0\0\0\0");
+        push_jpeg_segment(&mut jpeg, 0xee, b"Adobe\0d\0\0\0\0\0");
+        push_jpeg_segment(&mut jpeg, 0xef, b"imglean-app15");
+        jpeg.extend_from_slice(&source[2..]);
+        jpeg
+    }
+
+    fn push_jpeg_segment(jpeg: &mut Vec<u8>, marker: u8, payload: &[u8]) {
+        jpeg.extend_from_slice(&[0xff, marker]);
+        jpeg.extend_from_slice(&u16::try_from(payload.len() + 2).unwrap().to_be_bytes());
+        jpeg.extend_from_slice(payload);
     }
 
     fn push_chunk(png: &mut Vec<u8>, name: &[u8; 4], data: &[u8]) {
