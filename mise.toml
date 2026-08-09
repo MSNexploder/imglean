@@ -52,7 +52,7 @@ description = "Audit dependency advisories, licenses, duplicates, and sources"
 # cargo-deny's --locked protects Cargo.lock; only --offline disables advisory fetches.
 run = [
   "cargo deny --locked check advisories bans licenses sources",
-  "cargo deny --locked --manifest-path fuzz/Cargo.toml check advisories bans licenses sources",
+  "cargo deny --locked --manifest-path fuzz/Cargo.toml --config fuzz/deny.toml check advisories bans licenses sources",
 ]
 
 [tasks.notices]

@@ -7,13 +7,8 @@ targets = [
 ]
 all-features = true
 
-[advisories]
-ignore = [
-  { id = "RUSTSEC-2024-0436", reason = "rav1e 0.8.1 still requires paste 1.0.15; it is an unmaintained build-time macro dependency with no safe upstream upgrade" },
-]
-
 [licenses]
-allow = ["0BSD", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "IJG", "Libpng", "MIT", "Unicode-3.0", "Zlib"]
+allow = ["0BSD", "Apache-2.0", "BSD-2-Clause", "MIT", "NCSA", "Zlib"]
 confidence-threshold = 0.93
 
 [licenses.private]
@@ -23,9 +18,6 @@ ignore = false
 multiple-versions = "deny"
 wildcards = "deny"
 highlight = "all"
-skip = [
-  { crate = "syn@2.0.119", reason = "rav1e's proc-macro dependencies require syn 2 while thiserror 2 requires syn 3" },
-]
 
 [sources]
 unknown-registry = "deny"
