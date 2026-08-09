@@ -28,12 +28,13 @@ def with_text_metadata(png: bytes) -> bytes:
 
 def run(
     binary: Path, arguments: list[object], environment: dict[str, str]
-) -> subprocess.CompletedProcess[bytes]:
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [str(binary), *(str(argument) for argument in arguments)],
         check=False,
         capture_output=True,
         env=environment,
+        text=True,
     )
 
 
@@ -80,7 +81,10 @@ def main() -> int:
             environment,
         )
         if result.returncode != 0:
-            raise SystemExit(result.stderr.decode(errors="replace"))
+            raise SystemExit(
+                f"pngquant integration failed ({result.returncode})\n"
+                f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            )
         candidate = (output / source.name).read_bytes()
         if len(candidate) >= len(source_bytes) or candidate == source_bytes:
             raise SystemExit("pngquant did not produce the required real lossy reduction")
@@ -88,8 +92,8 @@ def main() -> int:
             raise SystemExit("pngquant did not strip PNG metadata")
         if source.read_bytes() != source_bytes or len(list(output.iterdir())) != 1:
             raise SystemExit("pngquant integration changed the source or created extra output")
-        stdout = result.stdout.decode(errors="replace")
-        stderr = result.stderr.decode(errors="replace")
+        stdout = result.stdout
+        stderr = result.stderr
         if "-> pngquant" not in stdout or "using pngquant provider at" not in stderr:
             raise SystemExit("pngquant discovery or winner diagnostics are missing")
 
@@ -113,11 +117,14 @@ def main() -> int:
             environment,
         )
         if lossless.returncode != 0:
-            raise SystemExit(lossless.stderr.decode(errors="replace"))
+            raise SystemExit(
+                f"pngquant lossless-policy integration failed ({lossless.returncode})\n"
+                f"stdout:\n{lossless.stdout}\nstderr:\n{lossless.stderr}"
+            )
         if (lossless_output / lossless_source.name).read_bytes() != source_bytes:
             raise SystemExit("lossless mode did not preserve the baseline")
-        lossless_stdout = lossless.stdout.decode(errors="replace")
-        lossless_stderr = lossless.stderr.decode(errors="replace")
+        lossless_stdout = lossless.stdout
+        lossless_stderr = lossless.stderr
         if "pngquant                 not applicable" not in lossless_stdout:
             raise SystemExit("lossless mode did not report pngquant as not applicable")
         if "using pngquant" in lossless_stderr:

@@ -75,9 +75,13 @@ def main() -> int:
             check=False,
             capture_output=True,
             env=environment,
+            text=True,
         )
         if result.returncode != 0:
-            raise SystemExit(result.stderr.decode(errors="replace"))
+            raise SystemExit(
+                f"OptiPNG integration failed ({result.returncode})\n"
+                f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            )
         candidate = (output / source.name).read_bytes()
         if len(candidate) >= len(source_bytes):
             raise SystemExit("OptiPNG did not produce the required real size reduction")
@@ -85,8 +89,8 @@ def main() -> int:
             raise SystemExit("OptiPNG did not strip PNG metadata when requested")
         if source.read_bytes() != source_bytes or len(list(output.iterdir())) != 1:
             raise SystemExit("OptiPNG integration changed the source or created extra output")
-        stdout = result.stdout.decode(errors="replace")
-        stderr = result.stderr.decode(errors="replace")
+        stdout = result.stdout
+        stderr = result.stderr
         if "-> optipng" not in stdout or "using optipng provider at" not in stderr:
             raise SystemExit("OptiPNG discovery or winner diagnostics are missing")
 
@@ -111,10 +115,14 @@ def main() -> int:
             check=False,
             capture_output=True,
             env=environment,
+            text=True,
         )
         if all_result.returncode != 0:
-            raise SystemExit(all_result.stderr.decode(errors="replace"))
-        all_stdout = all_result.stdout.decode(errors="replace")
+            raise SystemExit(
+                f"combined PNG strategy integration failed ({all_result.returncode})\n"
+                f"stdout:\n{all_result.stdout}\nstderr:\n{all_result.stderr}"
+            )
+        all_stdout = all_result.stdout
         for strategy in (
             "oxipng-libdeflate",
             "oxipng-zopfli",

@@ -400,7 +400,14 @@ fn probe(provider: ProviderId, path: &Path) -> Result<(), DiscoveryError> {
                 && status.code() == Some(1))
     });
     if !accepted_status {
-        return discovery(&format!("{} capability probe failed", provider.as_str()));
+        let status = output.status.map_or_else(
+            || "without an exit status".to_owned(),
+            |status| status.to_string(),
+        );
+        return discovery(&format!(
+            "{} capability probe failed ({status})",
+            provider.as_str()
+        ));
     }
     if output.stdout.truncated || output.stderr.truncated {
         return discovery(&format!(

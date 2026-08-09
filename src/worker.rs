@@ -190,105 +190,113 @@ fn strategy_command(
                 .arg(candidate_name);
             Ok(command)
         }
-        Execution::External { executable, .. } if strategy.id == StrategyId::Optipng => {
-            let mut command = Command::new(executable);
-            command.arg("-quiet").arg("-o2");
-            if strip_metadata {
-                command.arg("-strip").arg("all");
+        Execution::External { executable, .. } => {
+            let directory = private_input
+                .parent()
+                .filter(|path| !path.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."));
+            if candidate_path.parent() != private_input.parent() {
+                return Err("external provider paths do not share a directory");
             }
-            command
-                .arg("-out")
-                .arg(candidate_path)
-                .arg("--")
-                .arg(private_input);
-            Ok(command)
-        }
-        Execution::External { executable, .. } if strategy.id == StrategyId::Pngquant => {
-            let Some(quality) = quality.numeric() else {
-                return Err("pngquant requires numeric quality");
-            };
+            let input_name = private_input
+                .file_name()
+                .ok_or("private input has no file name")?;
+            let candidate_name = candidate_path
+                .file_name()
+                .ok_or("private candidate has no file name")?;
             let mut command = Command::new(executable);
-            command
-                .arg("--force")
-                .arg("--quality")
-                .arg(format!("0-{quality}"))
-                .arg("--speed")
-                .arg("4")
-                .arg("--strip")
-                .arg("--output")
-                .arg(candidate_path)
-                .arg("--")
-                .arg(private_input);
-            Ok(command)
-        }
-        Execution::External { executable, .. } if strategy.id == StrategyId::Jpegtran => {
-            let mut command = Command::new(executable);
-            command
-                .arg("-copy")
-                .arg(if strip_metadata { "none" } else { "all" })
-                .arg("-optimize")
-                .arg("-progressive")
-                .arg("-strict")
-                .arg("-outfile")
-                .arg(candidate_path)
-                .arg(private_input);
-            Ok(command)
-        }
-        Execution::External { executable, .. } if strategy.id == StrategyId::Mozjpeg => {
-            let Some(quality) = quality.numeric() else {
-                return Err("MozJPEG requires numeric quality");
-            };
-            let mut command = Command::new(executable);
-            command
-                .arg("-quality")
-                .arg(quality.to_string())
-                .arg("-progressive")
-                .arg("-optimize")
-                .arg("-strict")
-                .arg("-outfile")
-                .arg(candidate_path)
-                .arg(private_input);
-            Ok(command)
-        }
-        Execution::External { executable, .. } if strategy.id == StrategyId::Jpegli => {
-            let Some(quality) = quality.numeric() else {
-                return Err("Jpegli requires numeric quality");
-            };
-            let mut command = Command::new(executable);
-            command
-                .arg("--quality")
-                .arg(quality.to_string())
-                .arg("--progressive_level")
-                .arg("2")
-                .arg(private_input)
-                .arg(candidate_path);
-            Ok(command)
-        }
-        Execution::External { executable, .. } if strategy.id == StrategyId::Libwebp => {
-            let mut command = Command::new(executable);
-            command.arg("-quiet");
-            match quality {
-                Quality::Lossless => {
-                    command.arg("-lossless").arg("-exact").arg("-q").arg("100");
+            command.current_dir(directory);
+            match strategy.id {
+                StrategyId::Optipng => {
+                    command.arg("-quiet").arg("-o2");
+                    if strip_metadata {
+                        command.arg("-strip").arg("all");
+                    }
+                    command
+                        .arg("-out")
+                        .arg(candidate_name)
+                        .arg("--")
+                        .arg(input_name);
                 }
-                Quality::Numeric(quality) => {
-                    command.arg("-q").arg(quality.to_string());
+                StrategyId::Pngquant => {
+                    let Some(quality) = quality.numeric() else {
+                        return Err("pngquant requires numeric quality");
+                    };
+                    command
+                        .arg("--force")
+                        .arg("--quality")
+                        .arg(format!("0-{quality}"))
+                        .arg("--speed")
+                        .arg("4")
+                        .arg("--strip")
+                        .arg("--output")
+                        .arg(candidate_name)
+                        .arg("--")
+                        .arg(input_name);
                 }
+                StrategyId::Jpegtran => {
+                    command
+                        .arg("-copy")
+                        .arg(if strip_metadata { "none" } else { "all" })
+                        .arg("-optimize")
+                        .arg("-progressive")
+                        .arg("-strict")
+                        .arg("-outfile")
+                        .arg(candidate_name)
+                        .arg(input_name);
+                }
+                StrategyId::Mozjpeg => {
+                    let Some(quality) = quality.numeric() else {
+                        return Err("MozJPEG requires numeric quality");
+                    };
+                    command
+                        .arg("-quality")
+                        .arg(quality.to_string())
+                        .arg("-progressive")
+                        .arg("-optimize")
+                        .arg("-strict")
+                        .arg("-outfile")
+                        .arg(candidate_name)
+                        .arg(input_name);
+                }
+                StrategyId::Jpegli => {
+                    let Some(quality) = quality.numeric() else {
+                        return Err("Jpegli requires numeric quality");
+                    };
+                    command
+                        .arg("--quality")
+                        .arg(quality.to_string())
+                        .arg("--progressive_level")
+                        .arg("2")
+                        .arg(input_name)
+                        .arg(candidate_name);
+                }
+                StrategyId::Libwebp => {
+                    command.arg("-quiet");
+                    match quality {
+                        Quality::Lossless => {
+                            command.arg("-lossless").arg("-exact").arg("-q").arg("100");
+                        }
+                        Quality::Numeric(quality) => {
+                            command.arg("-q").arg(quality.to_string());
+                        }
+                    }
+                    command
+                        .arg("-m")
+                        .arg("6")
+                        .arg("-alpha_q")
+                        .arg("100")
+                        .arg("-metadata")
+                        .arg(if strip_metadata { "none" } else { "all" })
+                        .arg("-o")
+                        .arg(candidate_name)
+                        .arg("--")
+                        .arg(input_name);
+                }
+                _ => return Err("unsupported external strategy"),
             }
-            command
-                .arg("-m")
-                .arg("6")
-                .arg("-alpha_q")
-                .arg("100")
-                .arg("-metadata")
-                .arg(if strip_metadata { "none" } else { "all" })
-                .arg("-o")
-                .arg(candidate_path)
-                .arg("--")
-                .arg(private_input);
             Ok(command)
         }
-        Execution::External { .. } => Err("unsupported external strategy"),
     }
 }
 
@@ -873,6 +881,7 @@ mod tests {
                 OsStr::new("private-input.png"),
             ]
         );
+        assert_eq!(command.get_current_dir(), Some(Path::new(".")));
 
         let command = strategy_command(
             &strategy,
@@ -896,6 +905,43 @@ mod tests {
                 OsStr::new("private-input.png"),
             ]
         );
+    }
+
+    #[test]
+    fn external_provider_receives_only_names_from_its_private_directory() {
+        let strategy = external_strategy(PathBuf::from("provider"));
+        let command = strategy_command(
+            &strategy,
+            Quality::Lossless,
+            false,
+            DEFAULT_STRATEGY_TIMEOUT,
+            Path::new("non-ASCII-ä/private-input.png"),
+            Path::new("non-ASCII-ä/candidate.png"),
+        )
+        .unwrap();
+        assert_eq!(command.get_current_dir(), Some(Path::new("non-ASCII-ä")));
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [
+                OsStr::new("-quiet"),
+                OsStr::new("-o2"),
+                OsStr::new("-out"),
+                OsStr::new("candidate.png"),
+                OsStr::new("--"),
+                OsStr::new("private-input.png"),
+            ]
+        );
+
+        let error = strategy_command(
+            &strategy,
+            Quality::Lossless,
+            false,
+            DEFAULT_STRATEGY_TIMEOUT,
+            Path::new("input/private-input.png"),
+            Path::new("output/candidate.png"),
+        )
+        .unwrap_err();
+        assert_eq!(error, "external provider paths do not share a directory");
     }
 
     #[test]
