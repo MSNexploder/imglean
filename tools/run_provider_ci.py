@@ -57,9 +57,11 @@ def clone(repository: str, revision_file: str, destination: Path, *, submodules:
         run(["git", "submodule", "update", "--init", "--recursive", "--depth", "1"], cwd=destination)
 
 
-def replace_exact(path: Path, old: str, new: str, description: str) -> None:
+def replace_exact(
+    path: Path, old: str, new: str, description: str, *, expected_count: int = 1
+) -> None:
     contents = path.read_text(encoding="utf-8")
-    if contents.count(old) != 1:
+    if contents.count(old) != expected_count:
         raise RuntimeError(f"the pinned {description} changed")
     path.write_text(contents.replace(old, new), encoding="utf-8")
 
@@ -191,12 +193,19 @@ def build_jpegtran(directory: Path, binary: Path) -> Path:
     build = source / "build"
     prefix = directory / "install"
     clone("https://github.com/libjpeg-turbo/libjpeg-turbo.git", "ci/libjpeg-turbo-revision.txt", source)
+    replace_exact(
+        source / "CMakeLists.txt",
+        "cmake_minimum_required(VERSION 3.15...3.28)",
+        "cmake_minimum_required(VERSION 3.15...3.28)\n"
+        "if(POLICY CMP0219)\n"
+        "  cmake_policy(SET CMP0219 NEW)\n"
+        "endif()",
+        "libjpeg-turbo CMP0219 policy declaration",
+    )
     cmake_configure(
         source,
         build,
         [
-            "-DCMAKE_POLICY_VERSION_MINIMUM=3.10",
-            "-DCMAKE_POLICY_DEFAULT_CMP0219=NEW",
             f"-DCMAKE_INSTALL_PREFIX={prefix}",
             "-DENABLE_SHARED=OFF",
             "-DENABLE_STATIC=ON",
@@ -217,12 +226,26 @@ def build_mozjpeg(directory: Path, binary: Path) -> None:
     source = directory / "source"
     build = source / "build"
     clone("https://github.com/mozilla/mozjpeg.git", "ci/mozjpeg-revision.txt", source)
+    replace_exact(
+        source / "CMakeLists.txt",
+        "cmake_minimum_required(VERSION 2.8.12)",
+        "cmake_minimum_required(VERSION 3.10)\n"
+        "if(POLICY CMP0219)\n"
+        "  cmake_policy(SET CMP0219 NEW)\n"
+        "endif()",
+        "MozJPEG CMake minimum version",
+    )
+    replace_exact(
+        source / "rdtarga.c",
+        "for (i = 0; i < sinfo->pixel_size; i++) {",
+        "for (i = 0; i < sinfo->pixel_size && i < 4; i++) {",
+        "MozJPEG Targa pixel bounds",
+        expected_count=2,
+    )
     cmake_configure(
         source,
         build,
         [
-            "-DCMAKE_POLICY_VERSION_MINIMUM=3.10",
-            "-DCMAKE_POLICY_DEFAULT_CMP0219=NEW",
             "-DENABLE_SHARED=OFF",
             "-DENABLE_STATIC=ON",
             "-DPNG_SUPPORTED=OFF",
@@ -273,6 +296,23 @@ def build_jpegli(directory: Path, binary: Path, jpeg_prefix: Path | None) -> Non
         old_policy,
         "cmake_policy(SET CMP0111 NEW)",
         "Highway CMP0111 policy declaration",
+    )
+    reproducible_definitions = '''  add_definitions(
+    # Avoid changing the binary based on the current time and date.
+    -D__DATE__="redacted"
+    -D__TIMESTAMP__="redacted"
+    -D__TIME__="redacted"
+  )'''
+    replace_exact(
+        source / "CMakeLists.txt",
+        reproducible_definitions,
+        '''  add_compile_definitions(
+    # Resource compilers do not accept the C/C++ warning control below.
+    "$<$<COMPILE_LANGUAGE:C,CXX>:__DATE__=\\\"redacted\\\">"
+    "$<$<COMPILE_LANGUAGE:C,CXX>:__TIMESTAMP__=\\\"redacted\\\">"
+    "$<$<COMPILE_LANGUAGE:C,CXX>:__TIME__=\\\"redacted\\\">"
+  )''',
+        "Jpegli reproducible compiler definitions",
     )
     cmake_configure(
         source,

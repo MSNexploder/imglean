@@ -30,6 +30,7 @@ jobs:
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     env:
+      MISE_AUTO_INSTALL: "false"
       MISE_TASK_RUN_AUTO_INSTALL: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -88,6 +89,7 @@ jobs:
             binary: target/x86_64-pc-windows-msvc/release/imglean.exe
     runs-on: ${{ matrix.os }}
     env:
+      MISE_AUTO_INSTALL: "false"
       MISE_TASK_RUN_AUTO_INSTALL: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -169,6 +171,8 @@ jobs:
   native-hardening:
     name: Fuzz and sanitizer hardening (Linux)
     runs-on: ubuntu-24.04
+    env:
+      MISE_AUTO_INSTALL: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
@@ -180,7 +184,7 @@ jobs:
           mise install rust
           nightly=$(tr -d '\r\n' < ci/rust-nightly-version.txt)
           rustup toolchain install "$nightly" --profile minimal --component rust-src
-          cargo install --locked --version 0.13.2 cargo-fuzz
+          cargo +"$RUSTUP_TOOLCHAIN" install --locked --version 0.13.2 cargo-fuzz
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends nasm
       - name: Run native codec tests with AddressSanitizer

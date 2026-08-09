@@ -74,6 +74,7 @@ jobs:
             binary: target/x86_64-pc-windows-msvc/release/imglean.exe
     runs-on: ${{ matrix.os }}
     env:
+      MISE_AUTO_INSTALL: "false"
       MISE_TASK_RUN_AUTO_INSTALL: "false"
       MISE_RUST_VERSION: ${{ needs.compliance.outputs.rust_version }}
     steps:
