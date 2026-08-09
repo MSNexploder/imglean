@@ -1,6 +1,6 @@
 # Version 0.6 Resource Limits
 
-This contract records limits version `v8`. `src/limits.rs` is authoritative;
+This contract records limits version `v9`. `src/limits.rs` is authoritative;
 changing a value requires a limits-version and boundary-test review.
 
 ## Hard byte and structure limits
@@ -15,7 +15,10 @@ changing a value requires a limits-version and boundary-test review.
 - 64 KiB retained from each provider diagnostic stream; excess is drained and
   marked truncated.
 - 32,768 pixels per dimension, 64 MiPixels, and 256 MiB decoder output storage.
-- 64 MiB per PNG chunk, 4,096 PNG chunks or JPEG markers, and 16 MiB total
+- AVIF has an additional 8,192-pixel limit per dimension. Bundled libaom is
+  compiled with the same AV1 decode limits, which also bounds a rectangular
+  AV1 frame to the shared 64-MiPixel ceiling before frame allocation.
+- 64 MiB per PNG/WebP chunk or AVIF box, 4,096 chunks, boxes, or JPEG markers, and 16 MiB total
   ancillary payload.
 
 Reads use inspected lengths or one-byte-over-limit detection. Arithmetic and
@@ -30,7 +33,7 @@ controller-owned byte accounting.
 
 ## Elapsed-time limits
 
-- PNG or JPEG validation: 5 seconds, checked around bounded parse/decode stages.
+- PNG, JPEG, WebP, or AVIF validation: 5 seconds, checked around bounded parse/decode stages.
 - External-provider discovery probe: 2 seconds.
 - Strategy-worker controller deadline: configurable from 6 through 600 seconds
   with `--timeout SECONDS`; default 60 seconds, capped by the remaining

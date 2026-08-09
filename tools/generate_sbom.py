@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OPTIPNG_VERSION = (ROOT / "ci/optipng-version.txt").read_text().strip()
+LIBWEBP_VERSION = (ROOT / "ci/libwebp-version.txt").read_text().strip()
 
 
 def main() -> int:
@@ -24,6 +25,24 @@ def main() -> int:
     )
     document["packages"].extend(
         [
+            {
+                "SPDXID": f"SPDXRef-Package-libwebp-{LIBWEBP_VERSION}",
+                "downloadLocation": f"https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-{LIBWEBP_VERSION}.tar.gz",
+                "externalRefs": [
+                    {
+                        "referenceCategory": "PACKAGE-MANAGER",
+                        "referenceLocator": f"pkg:generic/libwebp@{LIBWEBP_VERSION}",
+                        "referenceType": "purl",
+                    }
+                ],
+                "homepage": "https://developers.google.com/speed/webp",
+                "copyrightText": "NOASSERTION",
+                "filesAnalyzed": False,
+                "licenseConcluded": "BSD-3-Clause",
+                "licenseDeclared": "BSD-3-Clause",
+                "name": "libwebp",
+                "versionInfo": LIBWEBP_VERSION,
+            },
             {
                 "SPDXID": "SPDXRef-Package-highway-1.1.0",
                 "downloadLocation": "https://github.com/google/highway/releases/tag/1.1.0",
@@ -85,6 +104,11 @@ def main() -> int:
     )
     document["relationships"].extend(
         [
+            {
+                "relatedSpdxElement": f"SPDXRef-Package-libwebp-{LIBWEBP_VERSION}",
+                "relationshipType": "DEPENDS_ON",
+                "spdxElementId": "SPDXRef-Package-libwebp-sys-0.14.4",
+            },
             {
                 "relatedSpdxElement": "SPDXRef-Package-highway-1.1.0",
                 "relationshipType": "DEPENDS_ON",

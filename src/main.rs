@@ -1,4 +1,5 @@
 mod artifacts;
+mod avif;
 mod cli;
 mod controller;
 mod diagnostics;
@@ -10,6 +11,7 @@ mod output;
 mod png;
 mod process;
 mod strategy;
+mod webp;
 mod worker;
 
 use std::io::{self, Write};

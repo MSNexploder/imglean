@@ -11,7 +11,8 @@ ImgLean has one public controller and two provider execution forms:
   batch, validates sources and candidates, selects winners, and is the only
   component allowed to publish outputs.
 - A **bundled worker** is a short-lived private role of the same executable. It
-  runs one linked OxiPNG, OptiPNG, jpegtran, MozJPEG, or Jpegli strategy against
+  runs one linked OxiPNG, OptiPNG, jpegtran, MozJPEG, Jpegli, libwebp,
+  image-webp, libavif/libaom, or ravif/rav1e strategy against
   one controller-created private input.
 - A supported **external provider** is a separately installed executable used
   for pngquant or as an explicit override, with the same private-input/private-
@@ -25,6 +26,9 @@ Integration form is assessed in the order safely embeddable, linkable, then
 callable. OxiPNG uses its safe Rust API. OptiPNG uses a narrow PNG-only wrapper
 around its vendored engine. MozJPEG and Jpegli use Rust-facing native wrappers,
 and jpegtran uses MozJPEG's coefficient API behind one audited FFI boundary.
+libwebp uses a narrow audited FFI boundary, image-webp is safe Rust,
+libavif/libaom uses its Rust-facing native wrapper, and ravif supplies the
+independent Rust AV1 encoder.
 All linked code runs only in the disposable worker process, so linking does not
 remove crash and timeout isolation. pngquant remains external because of its
 GPL/commercial licensing boundary.
@@ -39,11 +43,16 @@ The versioned registry fixes strategy identity and order:
 4. `pngquant-v1` — external pngquant for PNG at numeric quality;
 5. `jpegtran-v1` — bundled lossless JPEG coefficient optimization;
 6. `mozjpeg-v1` — bundled MozJPEG for JPEG at numeric quality;
-7. `jpegli-v1` — bundled Jpegli for JPEG at numeric quality.
+7. `jpegli-v1` — bundled Jpegli for JPEG at numeric quality;
+8. `libwebp-v1` — bundled libwebp for lossless or numeric-quality WebP;
+9. `image-webp-v1` — bundled lossless image-webp;
+10. `avif-aom-v1` — bundled libavif/libaom at numeric quality; and
+11. `avif-rav1e-v1` — bundled ravif/rav1e at numeric quality.
 
 Compatible bundled strategies are enabled unless disabled. A configured
 external executable overrides its bundled implementation. Without an override,
-only the unbundled pngquant strategy searches `PATH`. External providers are
+only the unbundled pngquant strategy searches `PATH`. libwebp additionally
+supports an explicit capability-probed `cwebp` override. External providers are
 probed once under a short deadline and retained by canonical path for the
 invocation. Probes check CLI identity and behavior-affecting capabilities;
 provider version text is not a compatibility boundary. Numeric quality leaves all lossless strategies
@@ -62,7 +71,7 @@ invocation-wide limits. Workers receive neither source paths nor requested
 destination paths.
 
 Source and candidate bytes pass through the same bounded validator for their
-declared format. PNG and JPEG validators check their documented container
+declared format. PNG, JPEG, WebP, and AVIF validators check their documented container
 subset, complete decode, resource bounds, and C2PA/XMP refusal. Candidate
 dimensions must match the source. The provider's audited fidelity and metadata
 configuration—not a second pixel, perceptual-quality, or ancillary
@@ -135,6 +144,8 @@ binary reproducibility is not claimed.
 - [Input and batch](docs/contracts/INPUT_AND_BATCH.md)
 - [PNG validation](docs/contracts/PNG.md)
 - [JPEG validation](docs/contracts/JPEG.md)
+- [WebP validation](docs/contracts/WEBP.md)
+- [AVIF validation](docs/contracts/AVIF.md)
 - [Provider execution](docs/contracts/PROVIDER_EXECUTION.md)
 - [Output publication](docs/contracts/OUTPUT.md)
 - [Resource limits](docs/contracts/LIMITS.md)

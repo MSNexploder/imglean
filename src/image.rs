@@ -1,12 +1,16 @@
 use std::path::Path;
 
+use crate::avif::{self, ValidatedAvif};
 use crate::jpeg::{self, ValidatedJpeg};
 use crate::png::{self, ValidatedPng};
+use crate::webp::{self, ValidatedWebp};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ImageFormat {
     Png,
     Jpeg,
+    Webp,
+    Avif,
 }
 
 impl ImageFormat {
@@ -16,6 +20,10 @@ impl ImageFormat {
             Some(Self::Png)
         } else if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
             Some(Self::Jpeg)
+        } else if extension.eq_ignore_ascii_case("webp") {
+            Some(Self::Webp)
+        } else if extension.eq_ignore_ascii_case("avif") {
+            Some(Self::Avif)
         } else {
             None
         }
@@ -26,6 +34,8 @@ impl ImageFormat {
 pub enum ValidatedImage {
     Png(ValidatedPng),
     Jpeg(ValidatedJpeg),
+    Webp(ValidatedWebp),
+    Avif(ValidatedAvif),
 }
 
 impl ValidatedImage {
@@ -36,6 +46,12 @@ impl ValidatedImage {
                 .map_err(|error| error.message()),
             ImageFormat::Jpeg => jpeg::validate_source(bytes)
                 .map(Self::Jpeg)
+                .map_err(|error| error.message()),
+            ImageFormat::Webp => webp::validate_source(bytes)
+                .map(Self::Webp)
+                .map_err(|error| error.message()),
+            ImageFormat::Avif => avif::validate_source(bytes)
+                .map(Self::Avif)
                 .map_err(|error| error.message()),
         }
     }
@@ -48,6 +64,12 @@ impl ValidatedImage {
             Self::Jpeg(source) => jpeg::validate_candidate(&source, bytes)
                 .map(Self::Jpeg)
                 .map_err(|error| error.message()),
+            Self::Webp(source) => webp::validate_candidate(&source, bytes)
+                .map(Self::Webp)
+                .map_err(|error| error.message()),
+            Self::Avif(source) => avif::validate_candidate(&source, bytes)
+                .map(Self::Avif)
+                .map_err(|error| error.message()),
         }
     }
 
@@ -55,6 +77,27 @@ impl ValidatedImage {
         match self {
             Self::Png(image) => image.encoded_bytes(),
             Self::Jpeg(image) => image.encoded_bytes(),
+            Self::Webp(image) => image.encoded_bytes(),
+            Self::Avif(image) => image.encoded_bytes(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_every_supported_extension_without_ascii_case_sensitivity() {
+        for (path, expected) in [
+            ("image.png", ImageFormat::Png),
+            ("image.JPG", ImageFormat::Jpeg),
+            ("image.jpeg", ImageFormat::Jpeg),
+            ("image.WebP", ImageFormat::Webp),
+            ("image.AVIF", ImageFormat::Avif),
+        ] {
+            assert_eq!(ImageFormat::from_path(Path::new(path)), Some(expected));
+        }
+        assert_eq!(ImageFormat::from_path(Path::new("image.gif")), None);
     }
 }

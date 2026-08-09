@@ -11,6 +11,10 @@ The source baseline precedes this stable order:
 5. `jpegtran-v1` (JPEG, bundled, lossless)
 6. `mozjpeg-v1` (JPEG, bundled, numeric quality)
 7. `jpegli-v1` (JPEG, bundled, numeric quality)
+8. `libwebp-v1` (WebP, bundled with `cwebp` override, lossless or numeric quality)
+9. `image-webp-v1` (WebP, bundled, lossless)
+10. `avif-aom-v1` (AVIF, bundled, numeric quality)
+11. `avif-rav1e-v1` (AVIF, bundled, numeric quality)
 
 Every per-input report retains the rows for that input's format. Strategies for
 other formats are omitted. A strategy that does not support the selected
@@ -38,6 +42,12 @@ fidelity reduction but still runs applicable lossless strategies.
   coding, and strict input handling.
 - Bundled Jpegli receives native quality `Q` and progressive scans; the
   external override additionally pins progressive level 2.
+- libwebp uses lossless preset 9 at lossless quality or native lossy `Q`, with
+  method 6, exact transparent RGB, and lossless alpha.
+- image-webp always contributes its native lossless encoding.
+- libavif/libaom receives native quality `Q`, alpha quality 100, and speed 6.
+- ravif/rav1e receives native quality `Q`, alpha quality 100, speed 6, and
+  8-bit still-image output.
 
 The common number is a provider-native control, not an ImgLean-calculated
 quality score. The controller does not compare pixels or measure perceptual
@@ -60,6 +70,10 @@ strategy. The mapping is part of each versioned adapter:
   markers as needed to match the new encoding without duplicates or blind
   replay. They omit saved markers when the flag is set. External overrides use
   the behavior of their documented CLI mappings.
+- Both WebP strategies preserve ICC and Exif by default and omit them when
+  stripping is requested.
+- The selected libavif/libaom and ravif APIs expose no metadata-removal control;
+  each emits its normal container under either policy.
 
 This is deliberately provider-native and best effort. The controller does not
 strip metadata itself, compare ancillary payloads, or verify that a provider
@@ -70,8 +84,9 @@ a metadata-free output.
 ## Integration and execution boundary
 
 Integration form is evaluated in the order safely embeddable, linkable, then
-callable. OxiPNG uses a safe Rust API. OptiPNG, MozJPEG, jpegtran, and Jpegli are
-linked into the executable behind the internal codec boundary. Native code is
+callable. OxiPNG and image-webp use safe Rust APIs. OptiPNG, MozJPEG, jpegtran,
+Jpegli, libwebp, and libavif/libaom are linked behind the internal codec
+boundary; ravif/rav1e is linked Rust code. Native code is
 still called only in the short-lived provider worker. pngquant and explicit
 provider overrides use the external boundary. No ImageOptim-specific discovery
 or execution path exists.
@@ -101,7 +116,8 @@ override, bundled strategies need no discovery and pngquant searches for
 `pngquant` (or `pngquant.exe`) on `PATH`. An external path is canonicalized and
 probed once under the discovery deadline.
 
-Each probe requires bounded execution plus provider-specific CLI identity and
+The libwebp override probes `cwebp -longhelp` for lossless, exact, metadata,
+method, and alpha-quality controls. Each probe otherwise requires bounded execution plus provider-specific CLI identity and
 the options the adapter depends on. jpegtran and MozJPEG's historical help
 paths exit with status 1 after printing valid help, which each adapter accepts
 only when every required marker is present. A release-number string is neither
@@ -132,8 +148,9 @@ no-candidate result. Private-input mutation or cleanup failure fails the input.
 
 Native CI executes every bundled strategy directly and through the controller
 on each release target. Separate jobs build pinned representative OptiPNG,
-pngquant, MozJPEG, libjpeg-turbo jpegtran, and Jpegli sources and require a real
-reduction through discovery and the full controller path. Unit tests cover
+pngquant, MozJPEG, libjpeg-turbo jpegtran, Jpegli, and libwebp `cwebp` sources
+and require a real reduction through discovery and the full controller path.
+Unit tests cover
 absence, bad identity, required failure, process failure, timeout, malformed
 output, larger output, quality and metadata mappings, and baseline fallback.
 Real-provider tests use metadata-bearing inputs and exercise both jpegtran

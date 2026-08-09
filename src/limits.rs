@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-pub const LIMITS_VERSION: &str = "v8";
+pub const LIMITS_VERSION: &str = "v9";
 
 pub const MAX_INPUTS: usize = 128;
 pub const MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
@@ -13,6 +13,7 @@ pub const MAX_STRATEGY_WORKERS: usize = 3;
 
 pub const MAX_WIDTH: u32 = 32_768;
 pub const MAX_HEIGHT: u32 = 32_768;
+pub const MAX_AVIF_DIMENSION: u32 = 8_192;
 pub const MAX_PIXELS: u64 = 64 * 1024 * 1024;
 pub const MAX_RECONSTRUCTED_BYTES: usize = 256 * 1024 * 1024;
 pub const MAX_CHUNK_BYTES: usize = 64 * 1024 * 1024;
@@ -54,6 +55,14 @@ mod tests {
         assert_eq!(
             MAX_TEMPORARY_BYTES * MAX_STRATEGY_WORKERS as u64,
             768 * 1024 * 1024
+        );
+    }
+
+    #[test]
+    fn avif_dimension_limit_matches_the_pixel_limit() {
+        assert_eq!(
+            u64::from(MAX_AVIF_DIMENSION) * u64::from(MAX_AVIF_DIMENSION),
+            MAX_PIXELS
         );
     }
 }

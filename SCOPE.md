@@ -6,7 +6,7 @@
 
 ## Product definition
 
-ImgLean is for command-line users who want trustworthy local PNG and JPEG size reduction
+ImgLean is for command-line users who want trustworthy local PNG, JPEG, WebP, and AVIF size reduction
 without assembling an optimizer toolchain. For each input, it runs every enabled
 applicable strategy and writes the smallest candidate accepted under one common
 policy. The validated original participates as the first candidate, so every
@@ -44,7 +44,7 @@ licensed. This document is the authoritative product boundary.
 
 ## Version 0.6
 
-Version 0.6 supports explicit static PNG and JPEG inputs and a required separate output
+Version 0.6 supports explicit static PNG, JPEG, WebP, and AVIF inputs and a required separate output
 directory on 64-bit macOS, Linux, and Windows release targets. It accepts every
 standard static PNG color-type and bit-depth combination, including Adam7,
 within documented byte, dimension, pixel, allocation, chunk, and elapsed-time
@@ -54,6 +54,12 @@ refused.
 JPEG input is limited to bounded 8-bit baseline, extended-sequential, and
 progressive Huffman coding with one frame. Standard XMP APP1, APP11, and adjacent
 `.c2pa` sidecars are refused. Other accepted application/comment data is opaque.
+
+WebP input is limited to bounded static lossy or lossless images with optional
+alpha, ICC, and Exif. Animation chunks, standard XMP, embedded `C2PA`, and
+adjacent `.c2pa` sidecars are refused. AVIF input is limited to bounded static
+`avif`-branded images that libavif can fully decode. Image sequences, the C2PA
+BMFF UUID, the standard XMP MIME type, and adjacent `.c2pa` sidecars are refused.
 
 The controller performs a format-specific basic candidate gate: bounded
 container inspection and complete decode, matching dimensions, and the explicit
@@ -71,15 +77,21 @@ The ordered, format-specific registry is:
 4. pngquant at numeric quality, external and optional;
 5. jpegtran with configurable native marker copying, Huffman optimization, and
    progressive output, bundled;
-6. MozJPEG at numeric quality, bundled; and
-7. Jpegli at numeric quality, bundled.
+6. MozJPEG at numeric quality, bundled;
+7. Jpegli at numeric quality, bundled;
+8. libwebp at lossless or numeric quality, bundled with a `cwebp` override;
+9. image-webp lossless encoding, bundled;
+10. libavif/libaom at numeric quality, bundled; and
+11. ravif/rav1e at numeric quality, bundled.
 
 `--quality lossless|1..100` defaults to `lossless`. jpegtran and the PNG
 lossless strategies remain applicable at numeric quality. `pngquant-v1`,
-`mozjpeg-v1`, and `jpegli-v1` are not applicable at lossless quality. Numeric
-`Q` maps to each provider's native quality control; pngquant receives `0-Q`,
-while MozJPEG and Jpegli receive `Q`. ImgLean does not emulate lossy
-transformations or independently score quality.
+`mozjpeg-v1`, `jpegli-v1`, `avif-aom-v1`, and `avif-rav1e-v1` are not
+applicable at lossless quality. Numeric `Q` maps to each provider's native
+quality control; pngquant receives `0-Q`, while MozJPEG and Jpegli receive `Q`.
+ImgLean does not emulate lossy transformations or independently score quality.
+libwebp maps lossless to its native lossless preset and numeric `Q` to its
+native lossy quality. image-webp always contributes a lossless candidate.
 
 `--strip-metadata` allows metadata removal and requests native removal behavior
 where a strategy exposes it. It does not exclude an otherwise-applicable
@@ -123,7 +135,8 @@ contracts.
 
 [ARCHITECTURE.md](ARCHITECTURE.md) owns stable component boundaries. Detailed
 [input](docs/contracts/INPUT_AND_BATCH.md), [PNG](docs/contracts/PNG.md),
-[JPEG](docs/contracts/JPEG.md),
+[JPEG](docs/contracts/JPEG.md), [WebP](docs/contracts/WEBP.md),
+[AVIF](docs/contracts/AVIF.md),
 [provider](docs/contracts/PROVIDER_EXECUTION.md),
 [output](docs/contracts/OUTPUT.md), and [limits](docs/contracts/LIMITS.md)
 contracts own implemented behavior. [docs/RELEASE.md](docs/RELEASE.md) owns

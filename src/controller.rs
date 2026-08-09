@@ -764,7 +764,13 @@ mod tests {
                     }
                     StrategyId::OptipngV1 => StrategyResult::Candidate(winner.clone()),
                     StrategyId::PngquantV1 => StrategyResult::NoCandidate,
-                    StrategyId::JpegtranV1 | StrategyId::MozjpegV1 | StrategyId::JpegliV1 => {
+                    StrategyId::JpegtranV1
+                    | StrategyId::MozjpegV1
+                    | StrategyId::JpegliV1
+                    | StrategyId::LibwebpV1
+                    | StrategyId::ImageWebpV1
+                    | StrategyId::AvifAomV1
+                    | StrategyId::AvifRav1eV1 => {
                         unreachable!()
                     }
                 }
@@ -1264,7 +1270,11 @@ mod tests {
                 | StrategyId::PngquantV1
                 | StrategyId::JpegtranV1
                 | StrategyId::MozjpegV1
-                | StrategyId::JpegliV1 => unreachable!(),
+                | StrategyId::JpegliV1
+                | StrategyId::LibwebpV1
+                | StrategyId::ImageWebpV1
+                | StrategyId::AvifAomV1
+                | StrategyId::AvifRav1eV1 => unreachable!(),
             },
         );
 
@@ -1310,7 +1320,11 @@ mod tests {
                 | StrategyId::PngquantV1
                 | StrategyId::JpegtranV1
                 | StrategyId::MozjpegV1
-                | StrategyId::JpegliV1 => unreachable!(),
+                | StrategyId::JpegliV1
+                | StrategyId::LibwebpV1
+                | StrategyId::ImageWebpV1
+                | StrategyId::AvifAomV1
+                | StrategyId::AvifRav1eV1 => unreachable!(),
             },
         );
 

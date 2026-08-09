@@ -11,9 +11,13 @@ unsafe_code = "deny"
 [dependencies]
 jpegli = "=0.1.0"
 libc = "=0.2.189"
+image-webp = "=0.2.4"
+libavif = { version = "=0.14.0", default-features = false, features = ["codec-aom"] }
 libpng-sys = { version = "=1.1.11", features = ["build", "static-libz"] }
+libwebp-sys = "=0.14.4"
 mozjpeg = { version = "=0.10.13", default-features = false }
 mozjpeg-sys = { version = "=2.2.3", default-features = false, features = ["jpegtran"] }
+ravif = { version = "=0.13.0", default-features = false }
 
 [build-dependencies]
 cc = "=1.4.1"

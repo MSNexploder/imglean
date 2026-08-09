@@ -155,6 +155,9 @@ def dependency_inventory(packages: list[dict[str, Any]]) -> str:
         [
             "cexcept\t2.99-optipng\tZlib\tvendored",
             "highway\t1.1.0\tApache-2.0\tvendored by jpegli-sys",
+            "libwebp\t"
+            f"{(ROOT / 'ci/libwebp-version.txt').read_text().strip()}"
+            "\tBSD-3-Clause\tvendored by libwebp-sys",
             "optipng\t"
             f"{(ROOT / 'ci/optipng-version.txt').read_text().strip()}"
             "\tZlib AND Libpng\tvendored",
@@ -181,7 +184,7 @@ def release_manifest(
         if node["id"] in identities
     }
     return {
-        "schema_version": 8,
+        "schema_version": 9,
         "package": "imglean",
         "version": tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"],
         "source_commit": run(["git", "rev-parse", "HEAD"]),
@@ -206,6 +209,14 @@ def release_manifest(
             "jpegli": versions.get("jpegli"),
             "jpegli-sys": versions.get("jpegli-sys"),
             "libpng-sys": versions.get("libpng-sys"),
+            "image-webp": versions.get("image-webp"),
+            "libwebp": (ROOT / "ci/libwebp-version.txt").read_text().strip(),
+            "libwebp-sys": versions.get("libwebp-sys"),
+            "libavif": versions.get("libavif"),
+            "libavif-sys": versions.get("libavif-sys"),
+            "libaom-sys": versions.get("libaom-sys"),
+            "ravif": versions.get("ravif"),
+            "rav1e": versions.get("rav1e"),
         },
         "representative_external_overrides": [
             {
@@ -236,6 +247,11 @@ def release_manifest(
                 "strategies": ["jpegli-v1"],
                 "implementation": "Jpegli",
                 "revision": (ROOT / "ci/jpegli-revision.txt").read_text().strip(),
+            },
+            {
+                "strategies": ["libwebp-v1"],
+                "implementation": "libwebp cwebp",
+                "revision": (ROOT / "ci/libwebp-version.txt").read_text().strip(),
             },
         ],
         "strategy_registry": [
@@ -360,6 +376,40 @@ def release_manifest(
                 ],
                 "metadata": "bundled implementation preserves opaque markers and handles structural JFIF/Adobe markers without duplicates or blind replay; --strip-metadata omits saved markers; external override uses its native CLI behavior",
             },
+            {
+                "id": "libwebp-v1",
+                "execution": "bundled-with-external-override",
+                "provider": "libwebp",
+                "format": "WebP",
+                "bundled_settings": "libwebp lossless preset 9 or native quality Q, method 6, exact transparent RGB, lossless alpha, one thread",
+                "override_discovery": "cwebp CLI capability probe; provider version is not gated",
+                "applicability": "lossless and numeric quality",
+                "metadata": "preserves ICC and Exif by default; --strip-metadata omits both",
+            },
+            {
+                "id": "image-webp-v1",
+                "execution": "bundled",
+                "format": "WebP",
+                "settings": "image-webp 0.2.4 lossless encoder",
+                "applicability": "lossless and numeric quality",
+                "metadata": "preserves ICC and Exif by default; --strip-metadata omits both",
+            },
+            {
+                "id": "avif-aom-v1",
+                "execution": "bundled",
+                "format": "AVIF",
+                "settings": "libavif with libaom, native quality Q, alpha quality 100, speed 6, one thread",
+                "applicability": "numeric quality only",
+                "metadata": "selected API exposes no metadata-removal control; normal output under either policy",
+            },
+            {
+                "id": "avif-rav1e-v1",
+                "execution": "bundled",
+                "format": "AVIF",
+                "settings": "ravif/rav1e native quality Q, alpha quality 100, speed 6, 8-bit, one thread",
+                "applicability": "numeric quality only",
+                "metadata": "ravif does not expose metadata preservation or stripping controls",
+            },
         ],
         "quality_policy": {
             "accepted": "lossless or an integer from 1 through 100",
@@ -386,7 +436,7 @@ def release_manifest(
                 "oxipng_internal_minimum": 1,
             },
         },
-        "limits_version": "v8",
+        "limits_version": "v9",
         "build_environment": {
             "platform": platform.platform(),
             "packager": f"Python {platform.python_version()}",

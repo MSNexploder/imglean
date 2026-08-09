@@ -350,6 +350,72 @@ jobs:
           --binary ${{ matrix.binary }}
           --provider "${{ steps.provider_unix.outputs.jpegtran_path || steps.provider_windows.outputs.jpegtran_path }}"
 
+  libwebp-provider:
+    name: libwebp external override (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            binary: target/x86_64-unknown-linux-gnu/release/imglean
+            provider: build/cwebp
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            binary: target/x86_64-apple-darwin/release/imglean
+            provider: build/cwebp
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            binary: target/x86_64-pc-windows-msvc/release/imglean.exe
+            provider: build/cwebp.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
+        with:
+          install: false
+      - name: Select the single-configuration native generator
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '"CMAKE_GENERATOR=Ninja" >> $env:GITHUB_ENV'
+      - name: Install build tools
+        run: mise install rust python
+      - name: Build ImgLean
+        run: cargo build --locked --release --target ${{ matrix.target }}
+      - name: Build pinned libwebp cwebp
+        id: libwebp
+        shell: bash
+        run: |
+          version=$(tr -d '\r\n' < ci/libwebp-version.txt)
+          archive="$RUNNER_TEMP/libwebp.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${version}.tar.gz" \
+            --output "$archive"
+          echo "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564  $archive" | shasum -a 256 --check
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          source="$RUNNER_TEMP/libwebp-${version}"
+          cmake -S "$source" -B "$source/build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DWEBP_BUILD_ANIM_UTILS=OFF \
+            -DWEBP_BUILD_CWEBP=ON \
+            -DWEBP_BUILD_DWEBP=OFF \
+            -DWEBP_BUILD_GIF2WEBP=OFF \
+            -DWEBP_BUILD_IMG2WEBP=OFF \
+            -DWEBP_BUILD_VWEBP=OFF \
+            -DWEBP_BUILD_WEBPINFO=OFF \
+            -DWEBP_BUILD_WEBPMUX=OFF \
+            -DWEBP_BUILD_EXTRAS=OFF
+          cmake --build "$source/build" --config Release --target cwebp --parallel 2
+          provider="$source/${{ matrix.provider }}"
+          test -f "$provider"
+          echo "path=$provider" >> "$GITHUB_OUTPUT"
+      - name: Exercise discovery and real provider execution
+        run: >-
+          mise exec -- python tools/test_webp_provider.py
+          --binary ${{ matrix.binary }}
+          --provider "${{ steps.libwebp.outputs.path }}"
+
   compliance:
     name: Dependency and release records
     runs-on: ubuntu-24.04

@@ -273,14 +273,14 @@ fn validate_basename(path: &Path) -> Result<(OsString, ImageFormat), PreflightEr
     let Some(format) = ImageFormat::from_path(path) else {
         return Err(PreflightError::Input {
             path: path.to_path_buf(),
-            reason: "the input basename needs a nonempty stem and .png, .jpg, or .jpeg extension",
+            reason: "the input basename needs a nonempty stem and .png, .jpg, .jpeg, .webp, or .avif extension",
         });
     };
     let extension_length = path.extension().map_or(0, |extension| extension.len());
     if text.len() <= extension_length + 1 {
         return Err(PreflightError::Input {
             path: path.to_path_buf(),
-            reason: "the input basename needs a nonempty stem and .png, .jpg, or .jpeg extension",
+            reason: "the input basename needs a nonempty stem and .png, .jpg, .jpeg, .webp, or .avif extension",
         });
     }
     Ok((basename.to_os_string(), format))

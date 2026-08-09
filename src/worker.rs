@@ -9,6 +9,7 @@ use std::time::Duration;
 use oxipng::{Deflater, FilterStrategy, Options, StripChunks, ZopfliOptions, indexset};
 
 use crate::artifacts::Artifacts;
+use crate::avif::validate_source as validate_avif_source;
 use crate::diagnostics::escape_worker_text;
 use crate::jpeg::validate_source as validate_jpeg_source;
 use crate::limits::{
@@ -18,6 +19,7 @@ use crate::limits::{
 use crate::png::validate_source as validate_png_source;
 use crate::process::{self, Capture};
 use crate::strategy::{Execution, Quality, Strategy, StrategyId};
+use crate::webp::validate_source as validate_webp_source;
 
 const WORKER_ROLE: &str = "--imglean-internal-worker-v2";
 
@@ -262,6 +264,30 @@ fn strategy_command(
                 .arg(candidate_path);
             Ok(command)
         }
+        Execution::External { executable, .. } if strategy.id == StrategyId::LibwebpV1 => {
+            let mut command = Command::new(executable);
+            command.arg("-quiet");
+            match quality {
+                Quality::Lossless => {
+                    command.arg("-lossless").arg("-exact").arg("-q").arg("100");
+                }
+                Quality::Numeric(quality) => {
+                    command.arg("-q").arg(quality.to_string());
+                }
+            }
+            command
+                .arg("-m")
+                .arg("6")
+                .arg("-alpha_q")
+                .arg("100")
+                .arg("-metadata")
+                .arg(if strip_metadata { "none" } else { "all" })
+                .arg("-o")
+                .arg(candidate_path)
+                .arg("--")
+                .arg(private_input);
+            Ok(command)
+        }
         Execution::External { .. } => Err("unsupported external strategy"),
     }
 }
@@ -310,6 +336,8 @@ fn run_private(arguments: &[OsString]) -> i32 {
     let source_is_valid = match strategy.format() {
         crate::image::ImageFormat::Png => validate_png_source(&bytes).is_ok(),
         crate::image::ImageFormat::Jpeg => validate_jpeg_source(&bytes).is_ok(),
+        crate::image::ImageFormat::Webp => validate_webp_source(&bytes).is_ok(),
+        crate::image::ImageFormat::Avif => validate_avif_source(&bytes).is_ok(),
     };
     if !source_is_valid {
         return private_error("private provider input failed format validation");
@@ -354,12 +382,44 @@ fn run_private(arguments: &[OsString]) -> i32 {
                 Err(()) => return private_error("Jpegli could not optimize the private input"),
             }
         }
+        StrategyId::LibwebpV1 => {
+            match imglean_codecs::optimize_libwebp(&bytes, quality.numeric(), strip_metadata) {
+                Ok(bytes) => bytes,
+                Err(()) => return private_error("libwebp could not optimize the private input"),
+            }
+        }
+        StrategyId::ImageWebpV1 => {
+            match imglean_codecs::optimize_image_webp(&bytes, strip_metadata) {
+                Ok(bytes) => bytes,
+                Err(()) => return private_error("image-webp could not optimize the private input"),
+            }
+        }
+        StrategyId::AvifAomV1 => {
+            let Some(quality) = quality.numeric() else {
+                return private_error("libavif/libaom requires numeric quality");
+            };
+            match imglean_codecs::optimize_avif_aom(&bytes, quality) {
+                Ok(bytes) => bytes,
+                Err(()) => {
+                    return private_error("libavif/libaom could not optimize the private input");
+                }
+            }
+        }
+        StrategyId::AvifRav1eV1 => {
+            let Some(quality) = quality.numeric() else {
+                return private_error("ravif requires numeric quality");
+            };
+            match imglean_codecs::optimize_avif_rav1e(&bytes, quality) {
+                Ok(bytes) => bytes,
+                Err(()) => return private_error("ravif could not optimize the private input"),
+            }
+        }
         StrategyId::OptipngV1 | StrategyId::PngquantV1 => {
             unreachable!("handled or external strategy")
         }
     };
     if optimized.len() as u64 > MAX_CANDIDATE_BYTES {
-        return private_error("OxiPNG candidate exceeds the candidate-byte limit");
+        return private_error("provider candidate exceeds the candidate-byte limit");
     }
     let mut output = match OpenOptions::new()
         .write(true)
@@ -391,7 +451,11 @@ fn oxipng_options(strategy: StrategyId, timeout: Duration, strip_metadata: bool)
         | StrategyId::PngquantV1
         | StrategyId::JpegtranV1
         | StrategyId::MozjpegV1
-        | StrategyId::JpegliV1 => {
+        | StrategyId::JpegliV1
+        | StrategyId::LibwebpV1
+        | StrategyId::ImageWebpV1
+        | StrategyId::AvifAomV1
+        | StrategyId::AvifRav1eV1 => {
             unreachable!("other strategies do not use OxiPNG options")
         }
     };
@@ -576,6 +640,16 @@ mod tests {
                         .to_vec(),
                     "jpg",
                 ),
+                crate::image::ImageFormat::Webp => (
+                    include_bytes!("../tests/corpus/webp/v1/accepted/provider-reduction.webp")
+                        .to_vec(),
+                    "webp",
+                ),
+                crate::image::ImageFormat::Avif => (
+                    include_bytes!("../tests/corpus/avif/v1/accepted/provider-reduction.avif")
+                        .to_vec(),
+                    "avif",
+                ),
             };
             let input = directory.join(format!("{}-input.{extension}", strategy.as_str()));
             let candidate_path =
@@ -601,6 +675,12 @@ mod tests {
                 }
                 crate::image::ImageFormat::Jpeg => {
                     crate::jpeg::validate_source(&candidate).unwrap();
+                }
+                crate::image::ImageFormat::Webp => {
+                    crate::webp::validate_source(&candidate).unwrap();
+                }
+                crate::image::ImageFormat::Avif => {
+                    crate::avif::validate_source(&candidate).unwrap();
                 }
             }
         }
@@ -695,6 +775,44 @@ mod tests {
                     );
                 }
                 crate::jpeg::validate_source(&candidate).unwrap();
+            }
+        }
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn bundled_webp_strategies_preserve_or_strip_exif_as_requested() {
+        let _provider_guard = BUNDLED_PROVIDER_TEST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let directory = test_directory();
+        let source = include_bytes!("../tests/corpus/webp/v1/accepted/metadata.webp");
+        for strategy in [StrategyId::LibwebpV1, StrategyId::ImageWebpV1] {
+            for (policy, should_preserve) in [("preserve", true), ("strip", false)] {
+                let input = directory.join(format!("{}-{policy}-input.webp", strategy.as_str()));
+                let candidate =
+                    directory.join(format!("{}-{policy}-candidate.webp", strategy.as_str()));
+                fs::write(&input, source).unwrap();
+                let arguments = [
+                    OsString::from("imglean"),
+                    OsString::from(WORKER_ROLE),
+                    OsString::from(strategy.as_str()),
+                    OsString::from(LIMITS_VERSION),
+                    OsString::from("55"),
+                    OsString::from(policy),
+                    OsString::from("80"),
+                    input.into_os_string(),
+                    candidate.clone().into_os_string(),
+                ];
+                assert_eq!(run_private(&arguments), 0);
+                let candidate = fs::read(candidate).unwrap();
+                assert_eq!(
+                    candidate
+                        .windows(b"imglean-exif-marker".len())
+                        .any(|bytes| bytes == b"imglean-exif-marker"),
+                    should_preserve
+                );
+                crate::webp::validate_source(&candidate).unwrap();
             }
         }
         fs::remove_dir_all(directory).unwrap();
@@ -905,6 +1023,73 @@ mod tests {
                 OsStr::new("2"),
                 OsStr::new("private-input.jpg"),
                 OsStr::new("candidate.jpg"),
+            ]
+        );
+    }
+
+    #[test]
+    fn libwebp_command_maps_quality_metadata_and_exact_lossless_settings() {
+        let strategy = Strategy {
+            id: StrategyId::LibwebpV1,
+            execution: Execution::External {
+                executable: PathBuf::from("cwebp"),
+            },
+        };
+        let lossless = strategy_command(
+            &strategy,
+            Quality::Lossless,
+            false,
+            DEFAULT_STRATEGY_TIMEOUT,
+            Path::new("private-input.webp"),
+            Path::new("candidate.webp"),
+        )
+        .unwrap();
+        assert_eq!(
+            lossless.get_args().collect::<Vec<_>>(),
+            [
+                OsStr::new("-quiet"),
+                OsStr::new("-lossless"),
+                OsStr::new("-exact"),
+                OsStr::new("-q"),
+                OsStr::new("100"),
+                OsStr::new("-m"),
+                OsStr::new("6"),
+                OsStr::new("-alpha_q"),
+                OsStr::new("100"),
+                OsStr::new("-metadata"),
+                OsStr::new("all"),
+                OsStr::new("-o"),
+                OsStr::new("candidate.webp"),
+                OsStr::new("--"),
+                OsStr::new("private-input.webp"),
+            ]
+        );
+
+        let numeric = strategy_command(
+            &strategy,
+            Quality::Numeric(72),
+            true,
+            DEFAULT_STRATEGY_TIMEOUT,
+            Path::new("private-input.webp"),
+            Path::new("candidate.webp"),
+        )
+        .unwrap();
+        assert_eq!(
+            numeric.get_args().collect::<Vec<_>>(),
+            [
+                OsStr::new("-quiet"),
+                OsStr::new("-q"),
+                OsStr::new("72"),
+                OsStr::new("-m"),
+                OsStr::new("6"),
+                OsStr::new("-alpha_q"),
+                OsStr::new("100"),
+                OsStr::new("-metadata"),
+                OsStr::new("none"),
+                OsStr::new("-o"),
+                OsStr::new("candidate.webp"),
+                OsStr::new("--"),
+                OsStr::new("private-input.webp"),
             ]
         );
     }

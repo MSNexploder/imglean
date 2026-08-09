@@ -17,10 +17,14 @@ pub enum StrategyId {
     JpegtranV1,
     MozjpegV1,
     JpegliV1,
+    LibwebpV1,
+    ImageWebpV1,
+    AvifAomV1,
+    AvifRav1eV1,
 }
 
 impl StrategyId {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 11] = [
         Self::OxipngLibdeflateV1,
         Self::OxipngZopfliV1,
         Self::OptipngV1,
@@ -28,15 +32,23 @@ impl StrategyId {
         Self::JpegtranV1,
         Self::MozjpegV1,
         Self::JpegliV1,
+        Self::LibwebpV1,
+        Self::ImageWebpV1,
+        Self::AvifAomV1,
+        Self::AvifRav1eV1,
     ];
 
-    pub const BUNDLED: [Self; 6] = [
+    pub const BUNDLED: [Self; 10] = [
         Self::OxipngLibdeflateV1,
         Self::OxipngZopfliV1,
         Self::OptipngV1,
         Self::JpegtranV1,
         Self::MozjpegV1,
         Self::JpegliV1,
+        Self::LibwebpV1,
+        Self::ImageWebpV1,
+        Self::AvifAomV1,
+        Self::AvifRav1eV1,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -48,6 +60,10 @@ impl StrategyId {
             Self::JpegtranV1 => "jpegtran-v1",
             Self::MozjpegV1 => "mozjpeg-v1",
             Self::JpegliV1 => "jpegli-v1",
+            Self::LibwebpV1 => "libwebp-v1",
+            Self::ImageWebpV1 => "image-webp-v1",
+            Self::AvifAomV1 => "avif-aom-v1",
+            Self::AvifRav1eV1 => "avif-rav1e-v1",
         }
     }
 
@@ -58,11 +74,20 @@ impl StrategyId {
             | Self::OptipngV1
             | Self::PngquantV1 => ImageFormat::Png,
             Self::JpegtranV1 | Self::MozjpegV1 | Self::JpegliV1 => ImageFormat::Jpeg,
+            Self::LibwebpV1 | Self::ImageWebpV1 => ImageFormat::Webp,
+            Self::AvifAomV1 | Self::AvifRav1eV1 => ImageFormat::Avif,
         }
     }
 
     pub const fn needs_numeric_quality(self) -> bool {
-        matches!(self, Self::PngquantV1 | Self::MozjpegV1 | Self::JpegliV1)
+        matches!(
+            self,
+            Self::PngquantV1
+                | Self::MozjpegV1
+                | Self::JpegliV1
+                | Self::AvifAomV1
+                | Self::AvifRav1eV1
+        )
     }
 
     pub fn parse(value: &str) -> Option<Self> {
@@ -85,16 +110,18 @@ pub enum ProviderId {
     Jpegtran,
     Mozjpeg,
     Jpegli,
+    Libwebp,
 }
 
 impl ProviderId {
     #[cfg(test)]
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Optipng,
         Self::Pngquant,
         Self::Jpegtran,
         Self::Mozjpeg,
         Self::Jpegli,
+        Self::Libwebp,
     ];
 
     pub fn parse(value: &str) -> Option<Self> {
@@ -104,6 +131,7 @@ impl ProviderId {
             "jpegtran" => Some(Self::Jpegtran),
             "mozjpeg" => Some(Self::Mozjpeg),
             "jpegli" => Some(Self::Jpegli),
+            "libwebp" => Some(Self::Libwebp),
             _ => None,
         }
     }
@@ -115,6 +143,7 @@ impl ProviderId {
             Self::Jpegtran => "jpegtran",
             Self::Mozjpeg => "mozjpeg",
             Self::Jpegli => "jpegli",
+            Self::Libwebp => "libwebp",
         }
     }
 
@@ -125,6 +154,7 @@ impl ProviderId {
             Self::Jpegtran => StrategyId::JpegtranV1,
             Self::Mozjpeg => StrategyId::MozjpegV1,
             Self::Jpegli => StrategyId::JpegliV1,
+            Self::Libwebp => StrategyId::LibwebpV1,
         }
     }
 
@@ -135,7 +165,12 @@ impl ProviderId {
             StrategyId::JpegtranV1 => Some(Self::Jpegtran),
             StrategyId::MozjpegV1 => Some(Self::Mozjpeg),
             StrategyId::JpegliV1 => Some(Self::Jpegli),
-            StrategyId::OxipngLibdeflateV1 | StrategyId::OxipngZopfliV1 => None,
+            StrategyId::LibwebpV1 => Some(Self::Libwebp),
+            StrategyId::OxipngLibdeflateV1
+            | StrategyId::OxipngZopfliV1
+            | StrategyId::ImageWebpV1
+            | StrategyId::AvifAomV1
+            | StrategyId::AvifRav1eV1 => None,
         }
     }
 
@@ -146,6 +181,7 @@ impl ProviderId {
             Self::Jpegtran => "jpegtran",
             Self::Mozjpeg => "cjpeg",
             Self::Jpegli => "cjpegli",
+            Self::Libwebp => "cwebp",
         }
     }
 
@@ -154,6 +190,7 @@ impl ProviderId {
             Self::Optipng => "-help",
             Self::Pngquant | Self::Jpegli => "--help",
             Self::Jpegtran | Self::Mozjpeg => "-help",
+            Self::Libwebp => "-longhelp",
         }
     }
 
@@ -183,6 +220,14 @@ impl ProviderId {
                 "compressed jpeg output file",
                 "--quality",
                 "--progressive_level",
+            ],
+            Self::Libwebp => &[
+                "usage:",
+                "png, jpeg, tiff or webp file",
+                "-lossless",
+                "-exact",
+                "-metadata",
+                "-alpha_q",
             ],
         }
     }
@@ -466,11 +511,17 @@ mod tests {
                 "jpegtran-v1",
                 "mozjpeg-v1",
                 "jpegli-v1",
+                "libwebp-v1",
+                "image-webp-v1",
+                "avif-aom-v1",
+                "avif-rav1e-v1",
             ]
         );
         assert_eq!(StrategyId::MozjpegV1.format(), ImageFormat::Jpeg);
         assert_eq!(StrategyId::JpegtranV1.format(), ImageFormat::Jpeg);
         assert_eq!(StrategyId::OptipngV1.format(), ImageFormat::Png);
+        assert_eq!(StrategyId::LibwebpV1.format(), ImageFormat::Webp);
+        assert_eq!(StrategyId::AvifAomV1.format(), ImageFormat::Avif);
     }
 
     #[test]
@@ -484,6 +535,8 @@ mod tests {
             StrategyId::PngquantV1,
             StrategyId::MozjpegV1,
             StrategyId::JpegliV1,
+            StrategyId::AvifAomV1,
+            StrategyId::AvifRav1eV1,
         ] {
             assert_eq!(
                 registry.iter().find(|entry| entry.id == id).unwrap().state,
@@ -566,6 +619,10 @@ mod tests {
                 ProviderId::Jpegli,
                 "input can be PPM, PNG, APNG, JPEG; compressed JPEG output file; \
                  --quality --progressive_level future release",
+            ),
+            (
+                ProviderId::Libwebp,
+                "usage: png, jpeg, tiff or webp file -lossless -exact -metadata -alpha_q future release",
             ),
         ];
         for (provider, output) in fixtures {

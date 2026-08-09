@@ -68,6 +68,46 @@ fn bundled_jpeg_strategies_run_through_the_controller() {
 }
 
 #[test]
+fn bundled_webp_and_avif_strategies_run_through_the_controller() {
+    for (name, source_bytes, strategies) in [
+        (
+            "photo.webp",
+            include_bytes!("corpus/webp/v1/accepted/provider-reduction.webp").as_slice(),
+            ["libwebp-v1", "image-webp-v1"],
+        ),
+        (
+            "photo.avif",
+            include_bytes!("corpus/avif/v1/accepted/provider-reduction.avif").as_slice(),
+            ["avif-aom-v1", "avif-rav1e-v1"],
+        ),
+    ] {
+        let directory = TestDirectory::new();
+        let output_directory = directory.create_directory("out");
+        let source = directory.path.join(name);
+        fs::write(&source, source_bytes).unwrap();
+        let result = Command::new(env!("CARGO_BIN_EXE_imglean"))
+            .arg("--quality")
+            .arg("80")
+            .arg("--output")
+            .arg(&output_directory)
+            .arg(&source)
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+        let report = stdout(&result);
+        for strategy in strategies {
+            assert!(
+                report.lines().any(|line| {
+                    line.contains(strategy) && line.contains(" bytes") && !line.contains("warning:")
+                }),
+                "bundled strategy did not produce a candidate: {strategy}\n{report}"
+            );
+        }
+        assert!(output_directory.join(name).is_file());
+    }
+}
+
+#[test]
 fn metadata_stripping_is_delegated_to_the_winning_strategy() {
     let directory = TestDirectory::new();
     let output_directory = directory.create_directory("out");

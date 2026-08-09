@@ -54,8 +54,8 @@ replacing rename publication, metadata, and packaged-artifact smoke tests.
 Windows builds pin CMake's Ninja generator because the bundled Jpegli wrapper
 expects a single-configuration native-library layout.
 Separate CI jobs build pinned representative OptiPNG, pngquant, MozJPEG,
-libjpeg-turbo jpegtran, and Jpegli revisions, then prove capability discovery
-and real execution on each target. These pins make CI reproducible; runtime
+libjpeg-turbo jpegtran, Jpegli, and libwebp revisions, then prove capability
+discovery and real execution on each target. These pins make CI reproducible; runtime
 adapters do not gate provider release numbers.
 Representative native filesystems must demonstrate complete replacing rename
 publication. Cross-compilation alone does not qualify a target.
@@ -92,7 +92,8 @@ The manifest records stable strategy order, identifiers, quality and metadata
 policies, worker limits, bundled settings, external-override capability
 contracts, invocation arguments, representative CI revisions, and exact
 bundled OxiPNG, OptiPNG, Cexcept, MozJPEG, Jpegli, Highway, libpng,
-libdeflater, and Zopfli dependency versions. pngquant and explicitly selected
+libdeflater, Zopfli, libwebp, image-webp, libavif, libaom, ravif, and rav1e
+dependency versions. pngquant and explicitly selected
 provider executables are not bundled or included in the dependency inventory
 or SBOM.
 

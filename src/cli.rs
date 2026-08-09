@@ -12,7 +12,7 @@ const HELP: &str = concat!(
     "ImgLean ",
     env!("CARGO_PKG_VERSION"),
     "\n\
-Make supported PNG and JPEG images lean without replacing source files.\n\n\
+Make supported PNG, JPEG, WebP, and AVIF images lean without replacing source files.\n\n\
 Usage: imglean --output OUTPUT_DIRECTORY INPUT...\n\n\
 Options:\n\
   --output DIRECTORY       Existing directory for separate output files\n\
@@ -28,9 +28,10 @@ Options:\n\
 \n\
 Strategy IDs (default order):\n\
   oxipng-libdeflate-v1, oxipng-zopfli-v1, optipng-v1, pngquant-v1,\n\
-  jpegtran-v1, mozjpeg-v1, jpegli-v1\n\
+  jpegtran-v1, mozjpeg-v1, jpegli-v1, libwebp-v1, image-webp-v1,\n\
+  avif-aom-v1, avif-rav1e-v1\n\
 Supported external providers and overrides:\n\
-  optipng, pngquant, jpegtran, mozjpeg, jpegli (checked by CLI capability)\n"
+  optipng, pngquant, jpegtran, mozjpeg, jpegli, libwebp (checked by CLI capability)\n"
 );
 
 const VERSION: &str = concat!("imglean ", env!("CARGO_PKG_VERSION"), "\n");

@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
+LIBWEBP_VERSION = (ROOT / "ci/libwebp-version.txt").read_text().strip()
 
 
 def main() -> int:
@@ -25,6 +26,8 @@ def main() -> int:
     libdeflate = packages["libdeflate-sys"]
     mozjpeg = packages["mozjpeg-sys"]
     jpegli = packages["jpegli-sys"]
+    libwebp = packages["libwebp-sys"]
+    libaom = packages["libaom-sys"]
     native_notices = [
         (
             Path(libdeflate["manifest_path"]).parent / "libdeflate" / "COPYING",
@@ -61,6 +64,24 @@ def main() -> int:
             "Statically linked by jpegli-sys.",
         ),
         (
+            Path(libwebp["manifest_path"]).parent / "vendor" / "COPYING",
+            ROOT / "licenses" / "libwebp-COPYING",
+            f"libwebp {LIBWEBP_VERSION} native code from libwebp-sys {libwebp['version']} (BSD-3-Clause)",
+            "Used by bundled libwebp-v1.",
+        ),
+        (
+            Path(libwebp["manifest_path"]).parent / "vendor" / "PATENTS",
+            ROOT / "licenses" / "libwebp-PATENTS",
+            "libwebp additional patent grant",
+            "Applies to the bundled libwebp source.",
+        ),
+        (
+            Path(libaom["manifest_path"]).parent / "vendor" / "PATENTS",
+            ROOT / "licenses" / "libaom-PATENTS",
+            "Alliance for Open Media Patent License 1.0",
+            "Applies to the bundled libaom AV1 implementation.",
+        ),
+        (
             ROOT / "crates" / "imglean-codecs" / "vendor" / "optipng" / "LICENSE.txt",
             ROOT / "licenses" / "optipng-LICENSE",
             "OptiPNG 7.9.1 PNG optimization engine (Zlib)",
@@ -81,7 +102,7 @@ def main() -> int:
         ),
     ]
     for vendored, checked, _, _ in native_notices:
-        if vendored.read_bytes() != checked.read_bytes():
+        if vendored.read_bytes().rstrip(b"\n") != checked.read_bytes().rstrip(b"\n"):
             raise RuntimeError(f"{checked.relative_to(ROOT)} differs from {vendored}")
 
     cargo_notices = subprocess.run(
@@ -95,7 +116,7 @@ def main() -> int:
     for _, checked, heading, usage in native_notices:
         notice = checked.read_text(encoding="utf-8").rstrip()
         sections.append(f"## {heading}\n\n{usage}\n\n```text\n{notice}\n```")
-    complete = "\n\n".join(sections) + "\n"
+    complete = "\n".join(line.rstrip() for line in "\n\n".join(sections).splitlines()) + "\n"
     (ROOT / "THIRD_PARTY_NOTICES.md").write_text(complete, encoding="utf-8")
     return 0
 
