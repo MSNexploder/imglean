@@ -2,7 +2,16 @@ ARG RUST_IMAGE=rust:1.97.1-bookworm
 FROM ${RUST_IMAGE} AS build
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends clang cmake ninja-build \
+    && apt-get install --yes --no-install-recommends clang cmake nasm ninja-build \
+    && { \
+        dpkg-query --show --showformat='${Package}\t${Version}\n' clang cmake nasm ninja-build; \
+        cc --version; \
+        c++ --version; \
+        ld --version; \
+        cmake --version; \
+        ninja --version; \
+        nasm --version; \
+    } > /container-build-tools.txt \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /source
@@ -24,6 +33,7 @@ LABEL org.opencontainers.image.title="ImgLean" \
 
 COPY --from=build /source/target/release/imglean /usr/local/bin/imglean
 COPY LICENSE.md THIRD_PARTY_NOTICES.md /licenses/imglean/
+COPY --from=build /container-build-tools.txt /licenses/imglean/BUILD_TOOLS.txt
 
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/imglean"]

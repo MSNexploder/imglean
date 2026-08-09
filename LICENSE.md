@@ -1,14 +1,6 @@
-# ImgLean License
-
-ImgLean is licensed under the Apache License, Version 2.0.
-
-Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in ImgLean is offered under the same license terms, without additional conditions.
-
-Copyright 2026 ImgLean contributors
-
                                  Apache License
                            Version 2.0, January 2004
-                        https://www.apache.org/licenses/
+                        http://www.apache.org/licenses/
 
    TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 
@@ -188,7 +180,7 @@ Copyright 2026 ImgLean contributors
       To apply the Apache License to your work, attach the following
       boilerplate notice, with the fields enclosed by brackets "[]"
       replaced with your own identifying information. (Don't include
-      the brackets!) The text should be enclosed in the appropriate
+      the brackets!)  The text should be enclosed in the appropriate
       comment syntax for the file format. We also recommend that a
       file or class name and description of purpose be included on the
       same "printed page" as the copyright notice for easier
@@ -200,7 +192,7 @@ Copyright 2026 ImgLean contributors
    you may not use this file except in compliance with the License.
    You may obtain a copy of the License at
 
-       https://www.apache.org/licenses/LICENSE-2.0
+       http://www.apache.org/licenses/LICENSE-2.0
 
    Unless required by applicable law or agreed to in writing, software
    distributed under the License is distributed on an "AS IS" BASIS,

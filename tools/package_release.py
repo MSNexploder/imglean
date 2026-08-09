@@ -185,7 +185,7 @@ def release_manifest(
         if node["id"] in identities
     }
     return {
-        "schema_version": 10,
+        "schema_version": 11,
         "package": "imglean",
         "version": tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"],
         "source_commit": run(["git", "rev-parse", "HEAD"]),
@@ -455,6 +455,7 @@ def release_manifest(
             "native_compiler": native_compiler(),
             "linker": native_linker(),
             "sdk": sdk_details(),
+            "build_tools": build_tools(),
             "build_flags": selected_environment(),
         },
     }
@@ -462,6 +463,7 @@ def release_manifest(
 
 def selected_environment() -> dict[str, str]:
     names = [
+        "CMAKE_GENERATOR",
         "CARGO_BUILD_RUSTFLAGS",
         "CARGO_ENCODED_RUSTFLAGS",
         "CFLAGS",
@@ -502,6 +504,20 @@ def sdk_details() -> dict[str, str]:
     if "WindowsSDKVersion" in os.environ:
         details["windows_version"] = os.environ["WindowsSDKVersion"]
     return details
+
+
+def build_tools() -> dict[str, str]:
+    tools = {}
+    for name, command in [
+        ("cmake", ["cmake", "--version"]),
+        ("make", ["make", "--version"]),
+        ("nasm", ["nasm", "--version"]),
+        ("ninja", ["ninja", "--version"]),
+    ]:
+        value = run_optional(command)
+        if value:
+            tools[name] = value
+    return tools
 
 
 def first_available(commands: list[list[str]]) -> str | None:

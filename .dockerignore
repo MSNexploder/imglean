@@ -3,6 +3,9 @@
 .idea
 .vscode
 dist
+fuzz/artifacts
+fuzz/corpus
+fuzz/target
 target
 *.swp
 *.tmp

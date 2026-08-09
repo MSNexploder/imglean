@@ -1,5 +1,6 @@
 accepted = ["0BSD", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "IJG", "Libpng", "MIT", "Unicode-3.0", "Zlib"]
 targets = [
+  "aarch64-apple-darwin",
   "x86_64-apple-darwin",
   "x86_64-unknown-linux-gnu",
   "x86_64-pc-windows-msvc",
@@ -7,3 +8,10 @@ targets = [
 ignore-build-dependencies = false
 ignore-dev-dependencies = true
 ignore-transitive-dependencies = false
+
+[jpegli-sys.clarify]
+license = "BSD-3-Clause"
+
+[[jpegli-sys.clarify.files]]
+path = "LICENSE"
+checksum = "2fbf612cf8db413c570f11b875cf96d89266c275b4712902e76d7375a1902624"

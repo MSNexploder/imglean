@@ -109,7 +109,7 @@ pub enum ProviderId {
 }
 
 impl ProviderId {
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub const ALL: [Self; 6] = [
         Self::Optipng,
         Self::Pngquant,
@@ -488,10 +488,12 @@ fn error(message: &str) -> DiscoveryError {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use super::*;
 
+    #[cfg(unix)]
     static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
     #[test]

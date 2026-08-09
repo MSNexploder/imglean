@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise one real OptiPNG adapter through discovery and the controller."""
+"""Exercise one real OptiPNG override through preflight and the controller."""
 
 from __future__ import annotations
 
@@ -64,6 +64,9 @@ def main() -> int:
                 "oxipng-zopfli",
                 "--require-strategy",
                 "optipng",
+                "--provider",
+                "optipng",
+                discovered_provider,
                 "--strip-metadata",
                 "--output",
                 output,
@@ -98,6 +101,9 @@ def main() -> int:
                 "3",
                 "--require-strategy",
                 "optipng",
+                "--provider",
+                "optipng",
+                discovered_provider,
                 "--output",
                 all_output,
                 all_source,

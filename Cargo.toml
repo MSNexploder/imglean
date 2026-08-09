@@ -33,3 +33,11 @@ zune-jpeg = { version = "=0.5.15", default-features = false, features = ["log", 
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Storage_FileSystem"] }
+
+# jpegli-sys maps opt-level 0 to CMake Debug, whose MSVC debug CRT is
+# incompatible with Rust's normal CRT even in Cargo's dev and test profiles.
+[profile.dev.package.jpegli-sys]
+opt-level = 1
+
+[profile.test.package.jpegli-sys]
+opt-level = 1

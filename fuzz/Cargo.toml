@@ -1,0 +1,45 @@
+[package]
+name = "imglean-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+crc32fast = "=1.5.0"
+flate2 = { version = "=1.1.9", default-features = false, features = ["rust_backend"] }
+image-webp = "=0.2.4"
+libavif = { version = "=0.14.0", default-features = false, features = ["codec-aom"] }
+libfuzzer-sys = "=0.4.13"
+png = { version = "=0.18.1", default-features = false }
+zune-jpeg = { version = "=0.5.15", default-features = false, features = ["log", "std"] }
+
+[[bin]]
+name = "validate_png"
+path = "fuzz_targets/validate_png.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "validate_jpeg"
+path = "fuzz_targets/validate_jpeg.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "validate_webp"
+path = "fuzz_targets/validate_webp.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "validate_avif"
+path = "fuzz_targets/validate_avif.rs"
+test = false
+doc = false
+
+[workspace]
+members = ["."]

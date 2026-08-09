@@ -24,7 +24,8 @@ with earlier releases.
 The container target is `linux/amd64`. Its final image uses the pinned
 distroless Debian 13 C/C++ runtime, runs as a non-root user, and contains no
 shell or package manager. It contains the executable, Apache-2.0 license, and
-third-party notices.
+third-party notices. A build-tool record beside the notices captures the exact
+Debian packages, compiler, linker, CMake, Ninja, and NASM used for the image.
 
 ## Build inputs
 
@@ -47,7 +48,9 @@ of the release workflow and change only through a reviewed configuration
 update. The release workflow resolves the stable Rust channel once in its
 compliance job, passes that exact version to every native build, and records it
 in each artifact rather than copying it into this contract. Python `3.13` runs
-the standard-library-only packager and is also recorded.
+the standard-library-only packager and is also recorded. Validator fuzzing and
+native sanitizer tests use cargo-fuzz `0.13.2` with the exact nightly recorded
+in `ci/rust-nightly-version.txt`; that nightly is not used for release binaries.
 
 ## Qualification
 
@@ -63,12 +66,18 @@ adapters do not gate provider release numbers.
 Representative native filesystems must demonstrate complete replacing rename
 publication. Cross-compilation alone does not qualify a target.
 
+CI also regenerates the checked-in PNG, JPEG, WebP, and AVIF corpora and rejects
+drift. A Linux hardening job runs the complete test suite with AddressSanitizer,
+including instrumented native C and C++ builds, then fuzzes every format
+validator from private copies of its checked-in corpus. These checks complement
+the bounded corpus; they do not turn provider workers into a security sandbox.
+
 The container job builds with the exact Rust version resolved by the compliance
 job, smoke-tests the packaged CLI and publication-free check path inside the image,
 and saves the qualified container image archive for the publication gate. It
 resolves the exact builder-image digest before the build and records that digest,
-the pinned runtime image, Docker versions, and source commit with the release
-assets.
+the pinned runtime image, Docker versions, source commit, and the build-tool
+record extracted from the qualified image with the release assets.
 
 The canonical source gate is `mise run check`. Release qualification also runs
 `mise run audit`, regenerates and verifies `THIRD_PARTY_NOTICES.md`, generates
@@ -90,6 +99,8 @@ The dependency gate checks licenses, advisories, source provenance, enabled
 features, direct and transitive Rust code, vendored code, build scripts, and
 native libraries. GPL, AGPL, proprietary, source-incompatible, and
 redistribution-restricted code blocks release.
+An independent weekly workflow refreshes the advisory database and reruns the
+same locked dependency policy even when no source change triggers normal CI.
 
 ## Artifact contents
 
@@ -123,8 +134,8 @@ leading `v`.
 
 ## Homebrew tap
 
-The public `MSNexploder/homebrew-imglean` repository distributes a macOS-only
-`imglean` formula. The formula selects the qualified `aarch64-apple-darwin` or
+The public `MSNexploder/homebrew-tap` repository distributes ImgLean's
+macOS-only formula. The formula selects the qualified `aarch64-apple-darwin` or
 `x86_64-apple-darwin` GitHub release archive for the current Mac and installs
 its executable unchanged. It requires macOS 15 because that is the qualified
 runtime floor for both archives. Homebrew therefore does not introduce a second
@@ -139,7 +150,7 @@ the newest tap commit, while the generator and publisher both refuse to replace
 a newer formula when an older release workflow is rerun. The source repository
 must define a fine-grained
 `HOMEBREW_TAP_TOKEN` secret with contents write access only to
-`MSNexploder/homebrew-imglean`. The GitHub release remains the authoritative binary
+`MSNexploder/homebrew-tap`. The GitHub release remains the authoritative binary
 and checksum source.
 
 `tools/package_release.py` refuses a dirty source tree for normal packaging. It

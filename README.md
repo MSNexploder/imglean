@@ -218,10 +218,10 @@ not traverse directories or replace sources in place.
 ## Install on macOS
 
 Once the first release is published, tagged releases will be available through
-the project tap for native Apple Silicon and Intel Macs:
+the `MSNexploder` tap for native Apple Silicon and Intel Macs:
 
 ```sh
-brew install MSNexploder/imglean/imglean
+brew install MSNexploder/tap/imglean
 ```
 
 The formula installs the same qualified executable published in the GitHub
@@ -237,8 +237,9 @@ mise run check
 ```
 
 `mise run check` verifies formatting, runs Clippy for all targets and features
-with warnings denied, and runs the complete locked test suite. Release work also
-runs `mise run audit`, `mise run notices`, and `mise run sbom`. Windows source
+with warnings denied, checks the four validator fuzz harnesses, and runs the
+complete locked test suite. Release work also runs `mise run audit`,
+`mise run notices`, and `mise run sbom`. Windows source
 builds require CMake and Ninja; set `CMAKE_GENERATOR=Ninja` so the pinned Jpegli
 wrapper produces the static libraries in its expected single-configuration
 layout. CI and release workflows set this explicitly.
@@ -247,6 +248,8 @@ CI executes every bundled strategy directly and through the controller on all
 release targets. Separate native jobs build pinned representative executable
 overrides for OptiPNG, pngquant, jpegtran, MozJPEG, Jpegli, and libwebp and require real
 reductions through capability discovery and the complete controller path.
+CI also regenerates every format corpus and runs Linux AddressSanitizer tests
+plus bounded fuzzing for the PNG, JPEG, WebP, and AVIF validators.
 
 The release workflow can be dispatched manually to produce unpublished
 qualification artifacts. A matching `v<package-version>` tag publishes only

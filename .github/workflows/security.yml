@@ -1,0 +1,23 @@
+name: Scheduled dependency audit
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Advisory, license, and source audit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          install: false
+      - name: Install the pinned Rust toolchain and audit tool
+        run: mise install rust cargo:cargo-deny
+      - name: Check current dependency advisories and policy
+        run: mise run audit

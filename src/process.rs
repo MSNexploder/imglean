@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn terminates_a_process_at_the_deadline() {
-        let mut command = if cfg!(windows) {
+        let command = if cfg!(windows) {
             let mut command = Command::new("cmd");
             command.args(["/C", "ping -n 6 127.0.0.1 >nul"]);
             command
@@ -133,6 +133,8 @@ mod tests {
             command.args(["-c", "sleep 5"]);
             command
         };
+        #[cfg(unix)]
+        let mut command = command;
         #[cfg(unix)]
         command.env_clear().env("PATH", "/usr/bin:/bin");
         let started = Instant::now();
