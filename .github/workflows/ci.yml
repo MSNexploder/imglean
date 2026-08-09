@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  CMAKE_POLICY_VERSION_MINIMUM: "3.10"
+
 jobs:
   native:
     name: Native gate (${{ matrix.target }})
@@ -37,14 +40,12 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: echo "MACOSX_DEPLOYMENT_TARGET=15.0" >> "$GITHUB_ENV"
-      - name: Set the Intel macOS assembler target
-        if: matrix.target == 'x86_64-apple-darwin'
-        shell: bash
-        run: echo 'CMAKE_ASM_NASM_FLAGS=--pragma "macho build_version macos,15,0"' >> "$GITHUB_ENV"
-      - name: Use Rust's MSVC runtime for native dependencies
+      - name: Configure Windows native dependencies
         if: runner.os == 'Windows'
         shell: pwsh
-        run: '"CMAKE_TOOLCHAIN_FILE=$env:GITHUB_WORKSPACE/ci/windows-msvc.cmake" >> $env:GITHUB_ENV'
+        run: |
+          "CMAKE_GENERATOR=Ninja" >> $env:GITHUB_ENV
+          "CMAKE_TOOLCHAIN_FILE=$env:GITHUB_WORKSPACE/ci/windows-msvc.cmake" >> $env:GITHUB_ENV
       - name: Install build tools
         run: mise install rust python
       - name: Install Linux x86 assembler
@@ -60,6 +61,8 @@ jobs:
             brew untap --force aws/tap
           fi
           brew install nasm
+          echo "IMGLEAN_NASM=$(brew --prefix nasm)/bin/nasm" >> "$GITHUB_ENV"
+          echo "$GITHUB_WORKSPACE/ci/nasm" >> "$GITHUB_PATH"
       - name: Run canonical gate
         run: mise run check
       - name: Build release executable
@@ -84,6 +87,8 @@ jobs:
             target: x86_64-pc-windows-msvc
             binary: target/x86_64-pc-windows-msvc/release/imglean.exe
     runs-on: ${{ matrix.os }}
+    env:
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
@@ -93,14 +98,12 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: echo "MACOSX_DEPLOYMENT_TARGET=15.0" >> "$GITHUB_ENV"
-      - name: Set the Intel macOS assembler target
-        if: matrix.target == 'x86_64-apple-darwin'
-        shell: bash
-        run: echo 'CMAKE_ASM_NASM_FLAGS=--pragma "macho build_version macos,15,0"' >> "$GITHUB_ENV"
-      - name: Use Rust's MSVC runtime for native dependencies
+      - name: Configure Windows native dependencies
         if: runner.os == 'Windows'
         shell: pwsh
-        run: '"CMAKE_TOOLCHAIN_FILE=$env:GITHUB_WORKSPACE/ci/windows-msvc.cmake" >> $env:GITHUB_ENV'
+        run: |
+          "CMAKE_GENERATOR=Ninja" >> $env:GITHUB_ENV
+          "CMAKE_TOOLCHAIN_FILE=$env:GITHUB_WORKSPACE/ci/windows-msvc.cmake" >> $env:GITHUB_ENV
       - name: Install build tools
         run: mise install rust python
       - name: Install Linux x86 assembler
@@ -116,6 +119,8 @@ jobs:
             brew untap --force aws/tap
           fi
           brew install nasm
+          echo "IMGLEAN_NASM=$(brew --prefix nasm)/bin/nasm" >> "$GITHUB_ENV"
+          echo "$GITHUB_WORKSPACE/ci/nasm" >> "$GITHUB_PATH"
       - name: Build ImgLean once for all provider checks
         run: cargo build --locked --release --target ${{ matrix.target }}
       - name: Build and exercise every external provider

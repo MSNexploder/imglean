@@ -68,6 +68,8 @@ def cmake_configure(source: Path, build: Path, options: Sequence[str]) -> None:
     arguments: list[os.PathLike[str] | str] = ["cmake", "-S", source, "-B", build]
     if os.name == "nt":
         arguments.extend(["-G", "Ninja"])
+    if toolchain := os.environ.get("CMAKE_TOOLCHAIN_FILE"):
+        arguments.append(f"-DCMAKE_TOOLCHAIN_FILE={toolchain}")
     arguments.append("-DCMAKE_BUILD_TYPE=Release")
     arguments.extend(options)
     run(arguments)

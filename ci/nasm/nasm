@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+: "${IMGLEAN_NASM:?IMGLEAN_NASM must name the pinned NASM executable}"
+
+# libaom 3.11 expects the NASM 2 combined format/optimizer help from `-hf`.
+# NASM 3 splits optimizer help into `-h -O`, so present both sections.
+if test "$#" -eq 1 && test "$1" = "-hf"; then
+  "$IMGLEAN_NASM" "$@"
+  exec "$IMGLEAN_NASM" -h -O
+fi
+
+# NASM 3 defaults Mach-O objects to the obsolete LC_VERSION_MIN_MACOSX load
+# command. Emit LC_BUILD_VERSION so Xcode does not warn while linking them.
+for argument in "$@"; do
+  if test "$argument" = "macho64"; then
+    exec "$IMGLEAN_NASM" --pragma "macho build_version macos,15,0" "$@"
+  fi
+done
+
+exec "$IMGLEAN_NASM" "$@"
