@@ -27,7 +27,12 @@ run = [
   { task = "format:check" },
   { task = "lint" },
   { task = "test" },
+  { task = "homebrew:check" },
 ]
+
+[tasks."homebrew:check"]
+description = "Validate Homebrew formula generation"
+run = "python -B tools/test_homebrew_formula.py"
 
 [tasks.dev]
 description = "Run the development CLI"

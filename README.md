@@ -215,6 +215,18 @@ completed but at least one optimizer warned. A calling script or agent owns
 file discovery and any promotion of staged output. ImgLean intentionally does
 not traverse directories or replace sources in place.
 
+## Install on macOS
+
+Once the first release is published, tagged releases will be available through
+the project tap for native Apple Silicon and Intel Macs:
+
+```sh
+brew install MSNexploder/imglean/imglean
+```
+
+The formula installs the same qualified executable published in the GitHub
+release archive; it does not compile a separate Homebrew variant.
+
 ## Build and validate
 
 ImgLean uses mise to select the Rust toolchain and release-audit tools:

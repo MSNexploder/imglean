@@ -1,23 +1,25 @@
 # Version 0.6 Release Contract
 
 > [!IMPORTANT]
-> Release automation is implemented, but the x86-64 target artifacts and
-> linux/amd64 container remain unqualified and unpublished until their native
+> Release automation is implemented, but the native target artifacts and
+> linux/amd64 container remain unqualified and unpublished until their
 > workflow gates pass.
 
 ## Targets
 
 Version 0.6 release qualification begins with these target-specific artifacts:
 
+- `aarch64-apple-darwin`;
 - `x86_64-apple-darwin`;
 - `x86_64-unknown-linux-gnu`; and
 - `x86_64-pc-windows-msvc`.
 
-The checked-in native matrix uses `macos-15-intel`, `ubuntu-24.04`, and
-`windows-2025`. Until lower runtime boundaries are separately tested and
-recorded, the qualified claims are limited to macOS 15 on x86-64, Ubuntu 24.04
-on x86-64, and Windows Server 2025 on x86-64. A successful build on these
-runners does not imply compatibility with earlier releases.
+The checked-in native matrix uses `macos-15` for Apple Silicon,
+`macos-15-intel`, `ubuntu-24.04`, and `windows-2025`. Until lower runtime
+boundaries are separately tested and recorded, the qualified claims are limited
+to macOS 15 on Arm64 and x86-64, Ubuntu 24.04 on x86-64, and Windows Server 2025
+on x86-64. A successful build on these runners does not imply compatibility
+with earlier releases.
 
 The container target is `linux/amd64`. Its final image uses the pinned
 distroless Debian 13 C/C++ runtime, runs as a non-root user, and contains no
@@ -119,8 +121,29 @@ The GHCR image is a separate target-specific distribution, not a portable
 replacement for the native archives. Its tag follows the Git tag, including the
 leading `v`.
 
+## Homebrew tap
+
+The public `MSNexploder/homebrew-imglean` repository distributes a macOS-only
+`imglean` formula. The formula selects the qualified `aarch64-apple-darwin` or
+`x86_64-apple-darwin` GitHub release archive for the current Mac and installs
+its executable unchanged. It requires macOS 15 because that is the qualified
+runtime floor for both archives. Homebrew therefore does not introduce a second
+build or dependency-resolution path.
+
+After the GitHub release becomes public, the release workflow generates the
+formula from the two archive checksum files, prepares its tap commit locally,
+runs `brew style`, strict online audit, installation, and the formula test on an
+Apple Silicon runner and an Intel runner, then pushes the commit only after both
+architectures pass. The final publisher retries concurrent tap updates against
+the newest tap commit, while the generator and publisher both refuse to replace
+a newer formula when an older release workflow is rerun. The source repository
+must define a fine-grained
+`HOMEBREW_TAP_TOKEN` secret with contents write access only to
+`MSNexploder/homebrew-imglean`. The GitHub release remains the authoritative binary
+and checksum source.
+
 `tools/package_release.py` refuses a dirty source tree for normal packaging. It
-also accepts only the three declared version 0.6 targets, requires the declared
+also accepts only the four declared version 0.6 targets, requires the declared
 target to equal the native Rust host, and requires the release-binary smoke
 corpus to produce a strict size reduction. It
 creates `.tar.gz` archives for macOS and Linux and `.zip` archives for Windows,

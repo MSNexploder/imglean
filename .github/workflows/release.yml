@@ -63,6 +63,9 @@ jobs:
           - os: macos-15-intel
             target: x86_64-apple-darwin
             binary: target/x86_64-apple-darwin/release/imglean
+          - os: macos-15
+            target: aarch64-apple-darwin
+            binary: target/aarch64-apple-darwin/release/imglean
           - os: windows-2025
             target: x86_64-pc-windows-msvc
             binary: target/x86_64-pc-windows-msvc/release/imglean.exe
@@ -166,9 +169,20 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: imglean-x86_64-*
+          name: imglean-aarch64-apple-darwin
           path: release-assets
-          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: imglean-x86_64-apple-darwin
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: imglean-x86_64-unknown-linux-gnu
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: imglean-x86_64-pc-windows-msvc
+          path: release-assets
       - uses: actions/download-artifact@v4
         with:
           name: imglean-container-linux-amd64
@@ -207,3 +221,131 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: gh release edit "$GITHUB_REF_NAME" --draft=false
+
+  homebrew:
+    name: Validate Homebrew formula (${{ matrix.architecture }})
+    if: github.event_name == 'push'
+    needs:
+      - package
+      - publish
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            architecture: arm64
+          - os: macos-15-intel
+            architecture: x86-64
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
+        with:
+          install: false
+      - name: Install formula-generation tools
+        run: mise install python
+      - uses: actions/download-artifact@v4
+        with:
+          name: imglean-aarch64-apple-darwin
+          path: release-assets/arm64
+      - uses: actions/download-artifact@v4
+        with:
+          name: imglean-x86_64-apple-darwin
+          path: release-assets/x86-64
+      - uses: actions/checkout@v4
+        with:
+          repository: MSNexploder/homebrew-imglean
+          path: homebrew-imglean
+      - name: Generate formula from qualified checksums
+        shell: bash
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          mise exec -- python tools/generate_homebrew_formula.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --version "$version" \
+            --arm64-checksum "release-assets/arm64/imglean-$version-aarch64-apple-darwin.tar.gz.sha256" \
+            --x86-64-checksum "release-assets/x86-64/imglean-$version-x86_64-apple-darwin.tar.gz.sha256" \
+            --existing-formula homebrew-imglean/Formula/imglean.rb \
+            --output homebrew-imglean/Formula/imglean.rb
+      - name: Check formula style
+        shell: bash
+        run: |
+          brew style homebrew-imglean/Formula/imglean.rb
+      - name: Audit and install the formula from the tap
+        shell: bash
+        run: |
+          brew tap MSNexploder/imglean "$GITHUB_WORKSPACE/homebrew-imglean"
+          brew audit --strict --online MSNexploder/imglean/imglean
+          brew install MSNexploder/imglean/imglean
+          brew test MSNexploder/imglean/imglean
+      - uses: actions/upload-artifact@v4
+        with:
+          name: imglean-homebrew-formula-${{ matrix.architecture }}
+          path: homebrew-imglean/Formula/imglean.rb
+
+  homebrew-publish:
+    name: Publish Homebrew formula
+    if: github.event_name == 'push'
+    needs: homebrew
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: imglean-homebrew-formula-arm64
+          path: formula-arm64
+      - uses: actions/download-artifact@v4
+        with:
+          name: imglean-homebrew-formula-x86-64
+          path: formula-x86-64
+      - uses: actions/checkout@v4
+        with:
+          repository: MSNexploder/homebrew-imglean
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-imglean
+      - name: Publish formula update
+        shell: bash
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          cmp formula-arm64/imglean.rb formula-x86-64/imglean.rb
+          git -C homebrew-imglean config user.name github-actions[bot]
+          git -C homebrew-imglean config user.email 41898282+github-actions[bot]@users.noreply.github.com
+
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            git -C homebrew-imglean fetch origin main
+            git -C homebrew-imglean switch --detach origin/main
+
+            current_formula=homebrew-imglean/Formula/imglean.rb
+            if test -f "$current_formula"; then
+              current_version=$(sed -nE 's/^  version "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' "$current_formula")
+              if [[ ! $current_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "Cannot determine the current Homebrew formula version" >&2
+                exit 1
+              fi
+              oldest=$(printf '%s\n%s\n' "$version" "$current_version" | sort -V | head -n 1)
+              if test "$version" != "$current_version" && test "$oldest" = "$version"; then
+                echo "Homebrew formula $current_version is newer than $version; nothing to publish"
+                exit 0
+              fi
+            fi
+
+            if test -f "$current_formula" && cmp --silent formula-arm64/imglean.rb "$current_formula"; then
+              echo "Homebrew formula is already current"
+              exit 0
+            fi
+
+            mkdir -p homebrew-imglean/Formula
+            cp formula-arm64/imglean.rb "$current_formula"
+            git -C homebrew-imglean add Formula/imglean.rb
+            git -C homebrew-imglean commit -m "Update ImgLean to $version"
+            if git -C homebrew-imglean push origin HEAD:main; then
+              exit 0
+            fi
+            echo "Tap changed during publish attempt $attempt; retrying"
+          done
+
+          echo "Could not publish the Homebrew formula after 10 attempts" >&2
+          exit 1
