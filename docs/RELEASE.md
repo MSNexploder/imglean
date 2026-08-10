@@ -2,8 +2,8 @@
 
 > [!IMPORTANT]
 > Release automation is implemented, but the native target artifacts and
-> linux/amd64 container remain unqualified and unpublished until their
-> workflow gates pass.
+> multi-platform Linux container remain unqualified and unpublished until
+> their workflow gates pass.
 
 ## Targets
 
@@ -11,21 +11,24 @@ Version 0.6 release qualification begins with these target-specific artifacts:
 
 - `aarch64-apple-darwin`;
 - `x86_64-apple-darwin`;
-- `x86_64-unknown-linux-gnu`; and
+- `x86_64-unknown-linux-musl`; and
 - `x86_64-pc-windows-msvc`.
 
-The checked-in native matrix uses `macos-15` for Apple Silicon,
-`macos-15-intel`, `ubuntu-24.04`, and `windows-2025`. Until lower runtime
-boundaries are separately tested and recorded, the qualified claims are limited
-to macOS 15 on Arm64 and x86-64, Ubuntu 24.04 on x86-64, and Windows Server 2025
-on x86-64. A successful build on these runners does not imply compatibility
-with earlier releases.
+The macOS archives encode a macOS 15 deployment target. The Linux archive is
+built natively for musl in a pinned Alpine builder and has no ELF interpreter
+or shared-library dependencies. The Windows archive uses the
+`x86_64-pc-windows-msvc` target contract: Windows 10 or newer for client
+systems and Windows Server 2016 or newer for servers. CI runner versions are
+build and test inputs, not user-facing runtime boundaries.
 
-The container target is `linux/amd64`. Its final image uses the pinned
-distroless Debian 13 C/C++ runtime, runs as a non-root user, and contains no
-shell or package manager. It contains the executable, Apache-2.0 license, and
-third-party notices. A build-tool record beside the notices captures the exact
-Debian packages, compiler, linker, CMake, Ninja, and NASM used for the image.
+The container targets are `linux/amd64` and `linux/arm64`. Each is built and
+smoke-tested on a native runner, and the published version and `latest` tags
+are OCI indexes containing both variants. Their final images use the pinned
+distroless Debian 13 C/C++ runtime, run as a non-root user, and contain no shell
+or package manager. They contain the executable, Apache-2.0 license, and
+third-party notices. Per-architecture build-tool records beside the release
+assets capture the exact Debian packages, compiler, linker, CMake, Ninja, and
+NASM used for each image.
 
 ## Build inputs
 
@@ -36,7 +39,8 @@ toolchain and used for all builds. Each artifact records:
 - the complete dependency lock;
 - target, deployment settings, enabled Cargo features, and build flags;
 - OxiPNG, libdeflater, and other bundled revisions;
-- native compiler, linker, SDK, and build-tool versions; and
+- native compiler, linker, SDK, and build-tool versions;
+- system-package versions where applicable; and
 - the source commit.
 
 This record supports audit and reconstruction. Version 0.6 does not promise
@@ -47,22 +51,25 @@ The development configuration currently pins cargo-deny `0.20.2`, cargo-about
 of the release workflow and change only through a reviewed configuration
 update. The release workflow resolves the stable Rust channel once in its
 compliance job, passes that exact version to every native build, and records it
-in each artifact rather than copying it into this contract. Python `3.13` runs
-the standard-library-only packager and is also recorded. Validator fuzzing and
-native sanitizer tests use cargo-fuzz `0.13.2` with the exact nightly recorded
-in `ci/rust-nightly-version.txt`; that nightly is not used for release binaries.
+in each artifact rather than copying it into this contract. The packager's
+Python version is recorded per artifact. Validator fuzzing and native sanitizer
+tests use cargo-fuzz `0.13.2` with the exact nightly recorded in
+`ci/rust-nightly-version.txt`; that nightly is not used for release binaries.
 
 ## Qualification
 
-Every target runs the canonical locked formatting, lint, and test gate plus the
-target-native CLI, every bundled strategy, bounded parallel workers,
-replacing rename publication, metadata, and packaged-artifact smoke tests.
+The shared source runs the canonical locked formatting, lint, and test gate on
+GNU/Linux, both macOS architectures, and Windows. Each release executable then
+runs target-native tests covering the CLI, every bundled strategy, bounded
+parallel workers, replacing rename publication, metadata, and the packaged
+workflow. The musl job additionally rejects an ELF interpreter or any
+`DT_NEEDED` shared library before archiving the executable.
 Windows builds pin CMake's Ninja generator because the bundled Jpegli wrapper
 expects a single-configuration native-library layout.
-Separate CI jobs build pinned representative OptiPNG, pngquant, MozJPEG,
-libjpeg-turbo jpegtran, Jpegli, and libwebp revisions, then prove capability
-discovery and real execution on each target. These pins make CI reproducible; runtime
-adapters do not gate provider release numbers.
+Pinned representative OptiPNG, pngquant, MozJPEG, libjpeg-turbo jpegtran,
+Jpegli, and libwebp revisions prove capability discovery and real execution on
+every release target, including the static musl executable. These pins make CI
+reproducible; runtime adapters do not gate provider release numbers.
 Representative native filesystems must demonstrate complete replacing rename
 publication. Cross-compilation alone does not qualify a target.
 
@@ -72,18 +79,21 @@ including instrumented native C and C++ builds, then fuzzes every format
 validator from private copies of its checked-in corpus. These checks complement
 the bounded corpus; they do not turn provider workers into a security sandbox.
 
-The container job builds with the exact Rust version resolved by the compliance
-job, smoke-tests the packaged CLI and publication-free check path inside the image,
-and saves the qualified container image archive for the publication gate. It
-resolves the exact builder-image digest before the build and records that digest,
-the pinned runtime image, Docker versions, source commit, and the build-tool
-record extracted from the qualified image with the release assets.
+The container matrix builds both architectures with the exact Rust version
+resolved by the compliance job, smoke-tests the packaged CLI and
+publication-free check path inside each image, and saves both qualified image
+archives for the publication gate. It resolves the exact builder-image digest
+before each build and records that digest, the pinned runtime image, Docker
+versions, source commit, target platform, and build-tool record extracted from
+each qualified image with the release assets.
 
 The canonical source gate is `mise run check`. Release qualification also runs
 `mise run audit`, regenerates and verifies `THIRD_PARTY_NOTICES.md`, generates
-and parses an SPDX 2.3 SBOM, builds the target's release executable natively,
-and smoke-tests that exact executable through the complete worker and replacing
-publication flow before archiving it.
+and parses an SPDX 2.3 SBOM, and builds each release executable natively. The
+Linux job resolves its exact Rust-on-Alpine builder digest, records every
+installed Alpine package version, runs the locked test suite and representative
+external providers inside that builder, and smoke-tests the exact static
+executable before archiving it.
 
 Manual dispatch runs the complete qualification workflow and retains native
 archives plus the container image as workflow artifacts without publishing
@@ -91,9 +101,9 @@ them. Pushing a tag exactly matching `v` plus the Cargo package version runs the
 same gates. The release workflow calls the complete CI workflow, including all
 bundled and representative external-provider integrations. Only after that
 workflow, every native package, compliance, and container job succeeds does the
-publication job create a draft GitHub release, publish the container to GHCR as
-the version tag and `latest`, and make the GitHub release visible. The workflow
-never creates or pushes a tag.
+publication job create a draft GitHub release, publish the AMD64 and ARM64
+containers behind multi-platform GHCR version and `latest` tags, and make the
+GitHub release visible. The workflow never creates or pushes a tag.
 
 The dependency gate checks licenses, advisories, source provenance, enabled
 features, direct and transitive Rust code, vendored code, build scripts, and
@@ -128,9 +138,9 @@ Archives do not include an installer, separately installed optimizer, or runtime
 Release notes state the exact platform boundary and do not imply that one binary
 runs across operating systems.
 
-The GHCR image is a separate target-specific distribution, not a portable
-replacement for the native archives. Its tag follows the Git tag, including the
-leading `v`.
+The GHCR image is a separate multi-platform distribution, not a portable
+replacement for the native archives. Its tag follows the Git tag, including
+the leading `v`.
 
 ## Homebrew tap
 
@@ -155,7 +165,8 @@ and checksum source.
 
 `tools/package_release.py` refuses a dirty source tree for normal packaging. It
 also accepts only the four declared version 0.6 targets, requires the declared
-target to equal the native Rust host, and requires the release-binary smoke
+target to equal the native Rust host, enforces the target runtime contract
+(including static linkage for Linux), and requires the release-binary smoke
 corpus to produce a strict size reduction. It
 creates `.tar.gz` archives for macOS and Linux and `.zip` archives for Windows,
 verifies the expected archive members, and writes a sibling SHA-256 checksum.

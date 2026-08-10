@@ -2,8 +2,8 @@
 
 This record captures the implementation review performed on 2026-08-08 for
 the version 0.6 WebP and AVIF extension. The selection criteria were production
-use, active maintenance, permissive default-binary licensing, static builds on
-the three release targets, a direct byte-to-byte integration, and a genuinely
+use, active maintenance, permissive default-binary licensing, builds on all
+release targets, a direct byte-to-byte integration, and a genuinely
 different encoder implementation where practical.
 
 ## Selected WebP implementations

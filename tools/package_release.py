@@ -23,7 +23,7 @@ RELEASE_TARGETS = {
     "aarch64-apple-darwin",
     "x86_64-apple-darwin",
     "x86_64-pc-windows-msvc",
-    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
 }
 
 
@@ -185,12 +185,13 @@ def release_manifest(
         if node["id"] in identities
     }
     return {
-        "schema_version": 11,
+        "schema_version": 12,
         "package": "imglean",
         "version": tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"],
         "source_commit": run(["git", "rev-parse", "HEAD"]),
         "source_dirty": source_dirty,
         "target": target,
+        "runtime_compatibility": runtime_compatibility(target, binary),
         "rustc": rustc,
         "cargo": run(["cargo", "-V"]),
         "mise": run_optional(["mise", "--version"]),
@@ -456,6 +457,7 @@ def release_manifest(
             "linker": native_linker(),
             "sdk": sdk_details(),
             "build_tools": build_tools(),
+            "system_packages": system_packages(),
             "build_flags": selected_environment(),
         },
     }
@@ -469,11 +471,53 @@ def selected_environment() -> dict[str, str]:
         "CFLAGS",
         "CXXFLAGS",
         "LDFLAGS",
+        "IMGLEAN_RELEASE_BUILD_IMAGE",
         "MACOSX_DEPLOYMENT_TARGET",
         "RUSTFLAGS",
         "WindowsSDKVersion",
     ]
     return {name: os.environ[name] for name in names if name in os.environ}
+
+
+def runtime_compatibility(target: str, binary: Path) -> dict[str, str]:
+    if target == "x86_64-unknown-linux-musl":
+        return musl_compatibility(
+            run(["readelf", "--dynamic", str(binary)]),
+            run(["readelf", "--program-headers", str(binary)]),
+        )
+    if target.endswith("apple-darwin"):
+        deployment_target = os.environ.get("MACOSX_DEPLOYMENT_TARGET")
+        if deployment_target != "15.0":
+            raise RuntimeError("release packaging requires macOS deployment target 15.0")
+        return {
+            "minimum_os": "macOS 15.0",
+            "source": "MACOSX_DEPLOYMENT_TARGET",
+        }
+    if target == "x86_64-pc-windows-msvc":
+        return {
+            "minimum_client_os": "Windows 10",
+            "minimum_server_os": "Windows Server 2016",
+            "source": "Rust x86_64-pc-windows-msvc target contract",
+        }
+    raise RuntimeError(f"missing runtime compatibility contract for {target}")
+
+
+def musl_compatibility(dynamic: str, program_headers: str) -> dict[str, str]:
+    if "(NEEDED)" in dynamic:
+        raise RuntimeError("musl release executable depends on a shared library")
+    if "INTERP" in program_headers:
+        raise RuntimeError("musl release executable requires an ELF interpreter")
+    return {
+        "libc": "musl",
+        "linkage": "static",
+        "runtime_shared_libraries": "none",
+    }
+
+
+def system_packages() -> list[str]:
+    if not shutil.which("apk"):
+        return []
+    return sorted(run(["apk", "info", "-v"]).splitlines())
 
 
 def native_compiler() -> str | None:

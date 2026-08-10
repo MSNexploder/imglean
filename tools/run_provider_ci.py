@@ -278,8 +278,9 @@ def build_jpegli(directory: Path, binary: Path, jpeg_prefix: Path | None) -> Non
     jpeg_library = next(
         (
             path
+            for library_directory in (jpeg_prefix / "lib", jpeg_prefix / "lib64")
             for pattern in ("*.a", "*.lib")
-            for path in (jpeg_prefix / "lib").glob(pattern)
+            for path in library_directory.glob(pattern)
             if "jpeg" in path.name.lower() and "turbo" not in path.name.lower()
         ),
         None,

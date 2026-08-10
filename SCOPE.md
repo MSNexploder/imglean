@@ -71,9 +71,10 @@ Version 0.6 provides:
 - optional external pngquant discovery; and
 - explicit executable overrides for supported providers.
 
-Release qualification covers 64-bit Apple Silicon and Intel macOS, x86-64
-Linux, x86-64 Windows, and a minimal linux/amd64 container. Each artifact is
-qualified separately; one executable is not claimed to run across platforms.
+Release qualification covers 64-bit Apple Silicon and Intel macOS, a static
+x86-64 Linux executable, x86-64 Windows, and a minimal container for
+linux/amd64 and linux/arm64. Each artifact is qualified separately; one
+executable is not claimed to run across platforms.
 
 All compatible bundled strategies are enabled by default. Lossy strategies
 participate only after numeric quality is selected. External providers are

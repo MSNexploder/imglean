@@ -60,9 +60,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-            binary: target/x86_64-unknown-linux-gnu/release/imglean
           - os: macos-15-intel
             target: x86_64-apple-darwin
             binary: target/x86_64-apple-darwin/release/imglean
@@ -92,11 +89,6 @@ jobs:
         run: |
           "CMAKE_GENERATOR=Ninja" >> $env:GITHUB_ENV
           "CMAKE_TOOLCHAIN_FILE=$env:GITHUB_WORKSPACE/ci/windows-msvc.cmake" >> $env:GITHUB_ENV
-      - name: Install Linux x86 assembler
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends nasm
       - name: Install macOS x86 assembler
         if: matrix.target == 'x86_64-apple-darwin'
         shell: bash
@@ -128,12 +120,79 @@ jobs:
           name: imglean-${{ matrix.target }}
           path: dist/*
 
-  container:
-    name: Container (linux/amd64)
+  package-linux:
+    name: Package (x86_64-unknown-linux-musl)
     needs:
       - compliance
       - qualification
     runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: compliance-records
+          path: target/compliance
+      - name: Build and qualify static Linux archive
+        shell: bash
+        run: |
+          builder="docker.io/library/rust:${{ needs.compliance.outputs.rust_version }}-alpine3.22"
+          builder_digest=$(
+            docker buildx imagetools inspect "$builder" --raw |
+              jq --raw-output '
+                .manifests[] |
+                select(.platform.os == "linux" and .platform.architecture == "amd64") |
+                .digest
+              '
+          )
+          test -n "$builder_digest"
+          build_image="$builder@$builder_digest"
+          docker run --rm \
+            --platform linux/amd64 \
+            --env CMAKE_GENERATOR=Ninja \
+            --env CMAKE_POLICY_VERSION_MINIMUM=3.10 \
+            --env "IMGLEAN_RELEASE_BUILD_IMAGE=$build_image" \
+            --volume "$GITHUB_WORKSPACE:/source" \
+            --workdir /source \
+            "$build_image" \
+            sh -ceu '
+              apk add --no-cache \
+                binutils build-base ca-certificates cmake git linux-headers \
+                nasm ninja perl python3
+              git config --global --add safe.directory /source
+              target=x86_64-unknown-linux-musl
+              binary="target/$target/release/imglean"
+              cargo test --locked --workspace --all-features --target "$target"
+              cargo build --locked --release --target "$target"
+              python3 -B tools/test_package_release.py
+              python3 tools/run_provider_ci.py --binary "$binary"
+              python3 tools/package_release.py \
+                --target "$target" \
+                --binary "$binary" \
+                --sbom target/compliance/imglean.spdx.json \
+                --notices target/compliance/THIRD_PARTY_NOTICES.md \
+                --output dist
+            '
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: imglean-x86_64-unknown-linux-musl
+          path: dist/*
+
+  container:
+    name: Container (${{ matrix.platform }})
+    needs:
+      - compliance
+      - qualification
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux/amd64
+            architecture: amd64
+          - os: ubuntu-24.04-arm
+            platform: linux/arm64
+            architecture: arm64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build minimal container
@@ -147,6 +206,7 @@ jobs:
             echo "rust_version=${{ needs.compliance.outputs.rust_version }}"
             echo "builder=$builder@$builder_digest"
             echo "runtime=$runtime"
+            echo "platform=${{ matrix.platform }}"
             echo "source_commit=$GITHUB_SHA"
             docker version --format 'docker_client={{.Client.Version}} docker_server={{.Server.Version}}'
           } > container-build-inputs.txt
@@ -155,7 +215,7 @@ jobs:
             --build-arg "VERSION=${GITHUB_REF_NAME:-dev}" \
             --build-arg "SOURCE_COMMIT=$GITHUB_SHA" \
             --build-arg "SOURCE_REPOSITORY=$GITHUB_REPOSITORY" \
-            --platform linux/amd64 \
+            --platform "${{ matrix.platform }}" \
             --tag "imglean-release:$GITHUB_SHA" \
             .
           record_container=$(docker create "imglean-release:$GITHUB_SHA")
@@ -180,19 +240,22 @@ jobs:
           test "$status" -eq 4
       - name: Save qualified container
         shell: bash
-        run: docker save "imglean-release:$GITHUB_SHA" | gzip --no-name > imglean-linux-amd64.docker.tar.gz
+        run: >-
+          docker save "imglean-release:$GITHUB_SHA" |
+          gzip --no-name > "imglean-linux-${{ matrix.architecture }}.docker.tar.gz"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: imglean-container-linux-amd64
+          name: imglean-container-linux-${{ matrix.architecture }}
           path: |
             container-build-inputs.txt
-            imglean-linux-amd64.docker.tar.gz
+            imglean-linux-${{ matrix.architecture }}.docker.tar.gz
 
   publish:
     name: Publish qualified release
     if: github.event_name == 'push'
     needs:
       - package
+      - package-linux
       - container
     runs-on: ubuntu-24.04
     permissions:
@@ -209,7 +272,7 @@ jobs:
           path: release-assets
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: imglean-x86_64-unknown-linux-gnu
+          name: imglean-x86_64-unknown-linux-musl
           path: release-assets
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -218,9 +281,15 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: imglean-container-linux-amd64
-          path: container
-      - name: Add container build record
-        run: cp container/container-build-inputs.txt release-assets/
+          path: container/amd64
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: imglean-container-linux-arm64
+          path: container/arm64
+      - name: Add container build records
+        run: |
+          cp container/amd64/container-build-inputs.txt release-assets/container-build-inputs-linux-amd64.txt
+          cp container/arm64/container-build-inputs.txt release-assets/container-build-inputs-linux-arm64.txt
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -240,14 +309,29 @@ jobs:
       - name: Publish container image
         shell: bash
         run: |
-          gzip --decompress --stdout container/imglean-linux-amd64.docker.tar.gz | docker load
           repository=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
           image="ghcr.io/$repository"
           printf '%s' '${{ github.token }}' | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          docker tag "imglean-release:$GITHUB_SHA" "$image:$GITHUB_REF_NAME"
-          docker tag "imglean-release:$GITHUB_SHA" "$image:latest"
-          docker push "$image:$GITHUB_REF_NAME"
-          docker push "$image:latest"
+          for architecture in amd64 arm64; do
+            gzip --decompress --stdout \
+              "container/$architecture/imglean-linux-$architecture.docker.tar.gz" |
+              docker load
+            docker tag \
+              "imglean-release:$GITHUB_SHA" \
+              "$image:$GITHUB_REF_NAME-$architecture"
+            docker push "$image:$GITHUB_REF_NAME-$architecture"
+          done
+          docker buildx imagetools create \
+            --tag "$image:$GITHUB_REF_NAME" \
+            "$image:$GITHUB_REF_NAME-amd64" \
+            "$image:$GITHUB_REF_NAME-arm64"
+          docker buildx imagetools create \
+            --tag "$image:latest" \
+            "$image:$GITHUB_REF_NAME"
+          inspection=$(docker buildx imagetools inspect "$image:$GITHUB_REF_NAME")
+          printf '%s\n' "$inspection"
+          grep -Eq '^[[:space:]]+Platform: +linux/amd64$' <<<"$inspection"
+          grep -Eq '^[[:space:]]+Platform: +linux/arm64(/v8)?$' <<<"$inspection"
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

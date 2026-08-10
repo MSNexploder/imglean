@@ -34,12 +34,12 @@ Homebrew:
 brew install MSNexploder/tap/imglean
 ```
 
-Target-specific archives for macOS, Linux, and Windows are available from
-[GitHub Releases](https://github.com/MSNexploder/imglean/releases/latest). The
-first release qualifies macOS 15 on Apple Silicon and Intel, Ubuntu 24.04 on
-x86-64, and Windows Server 2025 on x86-64.
+Prebuilt archives for macOS on Apple Silicon and Intel, Linux on x86-64, and
+Windows on x86-64 are available from
+[GitHub Releases](https://github.com/MSNexploder/imglean/releases/latest).
+The Linux archive is a self-contained static executable.
 
-The minimal `linux/amd64` container is published separately:
+The minimal container supports `linux/amd64` and `linux/arm64`:
 
 ```sh
 docker pull ghcr.io/msnexploder/imglean:v0.6.0
