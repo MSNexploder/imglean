@@ -12,7 +12,9 @@ REPOSITORY_PATTERN = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 VERSION_PATTERN = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 CHECKSUM_PATTERN = re.compile(r"[0-9a-f]{64}")
 FORMULA_VERSION_PATTERN = re.compile(
-    r'^  version "([0-9]+\.[0-9]+\.[0-9]+)"$', re.MULTILINE
+    r'^    url "[^"\n]+/releases/download/v([0-9]+\.[0-9]+\.[0-9]+)/'
+    r'imglean-[^"\n]+-apple-darwin\.tar\.gz"$',
+    re.MULTILINE,
 )
 
 
@@ -58,8 +60,10 @@ def reject_downgrade(existing_formula: Path, new_version: str) -> None:
     matches = FORMULA_VERSION_PATTERN.findall(
         existing_formula.read_text(encoding="utf-8")
     )
-    if len(matches) != 1:
-        raise ValueError(f"{existing_formula} does not contain exactly one formula version")
+    if len(matches) != 2 or len(set(matches)) != 1:
+        raise ValueError(
+            f"{existing_formula} does not contain one consistent archive version"
+        )
     current_version = matches[0]
     if version_key(new_version) < version_key(current_version):
         raise ValueError(
@@ -87,7 +91,6 @@ def render_formula(repository: str, version: str, arm64: str, x86_64: str) -> st
     return f'''class Imglean < Formula
   desc "Select the smallest valid same-format image optimization result"
   homepage "https://github.com/{repository}"
-  version "{version}"
   license "Apache-2.0"
 
   depends_on macos: :sequoia

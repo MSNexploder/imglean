@@ -22,6 +22,7 @@ class HomebrewFormulaTests(unittest.TestCase):
         self.assertIn("class Imglean < Formula", rendered)
         self.assertIn("depends_on macos: :sequoia", rendered)
         self.assertIn("if Hardware::CPU.arm?", rendered)
+        self.assertNotIn('  version "0.6.0"', rendered)
         self.assertIn(
             "https://github.com/owner/imglean/releases/download/v0.6.0/"
             "imglean-0.6.0-aarch64-apple-darwin.tar.gz",
@@ -75,6 +76,23 @@ class HomebrewFormulaTests(unittest.TestCase):
 
             formula.reject_downgrade(existing, "0.7.0")
             formula.reject_downgrade(existing, "0.8.0")
+
+    def test_rejects_inconsistent_archive_versions(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            existing = Path(temporary) / "imglean.rb"
+            rendered = formula.render_formula(
+                "owner/repo", "0.7.0", "a" * 64, "b" * 64
+            )
+            existing.write_text(
+                rendered.replace(
+                    "/download/v0.7.0/imglean-0.7.0-x86_64",
+                    "/download/v0.8.0/imglean-0.8.0-x86_64",
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "consistent archive version"):
+                formula.reject_downgrade(existing, "0.8.0")
 
 
 if __name__ == "__main__":

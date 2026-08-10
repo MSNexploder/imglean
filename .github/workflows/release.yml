@@ -459,7 +459,7 @@ jobs:
 
             current_formula=homebrew-tap/Formula/imglean.rb
             if test -f "$current_formula"; then
-              current_version=$(sed -nE 's/^  version "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' "$current_formula")
+              current_version=$(sed -nE 's#^    url ".*/releases/download/v([0-9]+\.[0-9]+\.[0-9]+)/imglean-.*-apple-darwin\.tar\.gz"$#\1#p' "$current_formula" | sort -u)
               if [[ ! $current_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
                 echo "Cannot determine the current Homebrew formula version" >&2
                 exit 1
