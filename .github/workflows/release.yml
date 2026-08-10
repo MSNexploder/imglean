@@ -405,6 +405,13 @@ jobs:
       - name: Audit and install the formula from the tap
         shell: bash
         run: |
+          git -C homebrew-tap add Formula/imglean.rb
+          if ! git -C homebrew-tap diff --cached --quiet; then
+            git -C homebrew-tap \
+              -c "user.name=github-actions[bot]" \
+              -c "user.email=41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "Validate generated ImgLean formula"
+          fi
           brew tap MSNexploder/tap "$GITHUB_WORKSPACE/homebrew-tap"
           brew audit --strict --online MSNexploder/tap/imglean
           brew install MSNexploder/tap/imglean
