@@ -368,6 +368,9 @@ jobs:
           - os: macos-15-intel
             architecture: x86-64
     runs-on: ${{ matrix.os }}
+    env:
+      MISE_AUTO_INSTALL: "false"
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
     permissions:
       contents: read
     steps:
