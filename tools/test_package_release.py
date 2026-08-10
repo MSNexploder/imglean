@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 import package_release
 
@@ -46,6 +48,22 @@ class SubprocessTests(unittest.TestCase):
 
         self.assertEqual(package_release.run(command), "ā")
         self.assertEqual(package_release.run_optional(command), "ā")
+
+
+class ChecksumTests(unittest.TestCase):
+    def test_writes_portable_checksum_line_endings(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            archive = Path(temporary) / "imglean.zip"
+            archive.write_bytes(b"release archive")
+
+            checksum = package_release.write_checksum(archive)
+
+            self.assertEqual(
+                checksum.read_bytes(),
+                (
+                    f"{package_release.sha256(archive)}  {archive.name}\n"
+                ).encode("ascii"),
+            )
 
 if __name__ == "__main__":
     unittest.main()

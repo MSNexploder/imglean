@@ -104,10 +104,7 @@ def main() -> int:
 
     verify_archive(archive, archive_stem, binary_name)
 
-    checksum = sha256(archive)
-    archive.with_suffix(archive.suffix + ".sha256").write_text(
-        f"{checksum}  {archive.name}\n", encoding="ascii"
-    )
+    write_checksum(archive)
     print(archive)
     return 0
 
@@ -608,6 +605,12 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def write_checksum(archive: Path) -> Path:
+    checksum_path = archive.with_suffix(archive.suffix + ".sha256")
+    checksum_path.write_bytes(f"{sha256(archive)}  {archive.name}\n".encode("ascii"))
+    return checksum_path
 
 
 def write_zip(archive: Path, staging: Path, archive_stem: str) -> None:
