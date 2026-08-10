@@ -580,6 +580,7 @@ def run(command: list[str]) -> str:
         check=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        encoding="utf-8",
         text=True,
     )
     return completed.stdout.strip()
@@ -594,6 +595,7 @@ def run_optional(command: list[str]) -> str | None:
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
+        encoding="utf-8",
         text=True,
     )
     value = completed.stdout.strip()

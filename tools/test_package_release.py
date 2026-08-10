@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Focused tests for release runtime compatibility records."""
+"""Focused tests for release packaging."""
 
 from __future__ import annotations
 
+import sys
 import unittest
 
 import package_release
@@ -38,6 +39,13 @@ class RuntimeCompatibilityTests(unittest.TestCase):
                 "  INTERP         0x0000000000000270\n",
             )
 
+
+class SubprocessTests(unittest.TestCase):
+    def test_command_output_is_decoded_as_utf8(self) -> None:
+        command = [sys.executable, "-X", "utf8", "-c", 'print("ā")']
+
+        self.assertEqual(package_release.run(command), "ā")
+        self.assertEqual(package_release.run_optional(command), "ā")
 
 if __name__ == "__main__":
     unittest.main()
