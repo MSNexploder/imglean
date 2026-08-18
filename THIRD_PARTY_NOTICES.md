@@ -887,7 +887,7 @@ Used by:
 - bitflags 2.13.1
 - bitstream-io 4.10.0
 - bumpalo 3.20.3
-- cc 1.4.2
+- cc 1.4.3
 - cfg-if 1.0.4
 - cmake 0.1.58
 - crossbeam-deque 0.8.7
@@ -895,7 +895,7 @@ Used by:
 - crossbeam-utils 0.8.22
 - either 1.17.0
 - equivalent 1.0.2
-- find-msvc-tools 0.1.10
+- find-msvc-tools 0.1.11
 - flate2 1.1.9
 - glob 0.3.4
 - hashbrown 0.17.1
@@ -908,10 +908,10 @@ Used by:
 - log 0.4.33
 - num-bigint 0.4.8
 - num-derive 0.4.2
-- num-integer 0.1.46
+- num-integer 0.1.47
 - num-rational 0.4.2
 - num-traits 0.2.19
-- pkg-config 0.3.33
+- pkg-config 0.3.34
 - png 0.18.1
 - rayon-core 1.13.0
 - rayon 1.12.0
