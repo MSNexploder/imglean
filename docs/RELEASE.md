@@ -1,8 +1,8 @@
 # Version 0.6 Release Contract
 
 > [!IMPORTANT]
-> Version 0.6.0 does not include an ARM64 Linux archive. A subsequent release
-> must pass the target's native qualification gate before publishing one.
+> Version 0.6.1 adds a static ARM64 Linux archive, qualified natively under the
+> gates below.
 
 ## Targets
 
