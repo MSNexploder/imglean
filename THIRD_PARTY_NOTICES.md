@@ -452,7 +452,7 @@ Used by:
 
 Used by:
 
-- imglean 0.6.0
+- imglean 0.6.1
 - imgref 1.12.2
 - zune-core 0.5.3
 - zune-jpeg 0.5.15

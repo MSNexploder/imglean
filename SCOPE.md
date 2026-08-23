@@ -1,8 +1,8 @@
 # ImgLean Scope
 
 > **Status:** ImgLean 0.6 is the complete first version in source.
-> Version 0.6.0 does not include an ARM64 Linux archive; a subsequent release
-> must pass the target's native qualification gate before publishing one.
+> Version 0.6.1 adds a static ARM64 Linux archive to the qualified native
+> release targets.
 
 This document is the authoritative product boundary: what ImgLean is, what it
 promises, and what it intentionally does not do.
