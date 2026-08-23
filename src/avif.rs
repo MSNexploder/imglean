@@ -130,15 +130,17 @@ fn inspect_container(bytes: &[u8], started: Instant) -> Result<(), ValidationErr
                     return failure("invalid AVIF file-type box");
                 }
                 found_ftyp = true;
-                let mut brands = std::iter::once(&payload[..4]).chain(payload[8..].chunks_exact(4));
+                let (compatible_brands, remainder) = payload[8..].as_chunks::<4>();
+                let brands = std::iter::once(&payload[..4])
+                    .chain(compatible_brands.iter().map(|brand| brand.as_slice()));
                 let mut has_avif = false;
-                for brand in brands.by_ref() {
+                for brand in brands {
                     if brand == b"avis" {
                         return failure("animated AVIF is not supported");
                     }
                     has_avif |= brand == b"avif";
                 }
-                if !has_avif || !payload[8..].chunks_exact(4).remainder().is_empty() {
+                if !has_avif || !remainder.is_empty() {
                     return failure("AVIF file-type box has unsupported brands");
                 }
             }

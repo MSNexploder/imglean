@@ -736,7 +736,7 @@ fn write_stderr(writer: &mut impl Write, message: &str) {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::io::{self, Write as _};
+    use std::io;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
     use std::sync::{Barrier, Mutex};
