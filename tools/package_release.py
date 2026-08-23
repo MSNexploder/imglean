@@ -21,6 +21,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 RELEASE_TARGETS = {
     "aarch64-apple-darwin",
+    "aarch64-unknown-linux-musl",
     "x86_64-apple-darwin",
     "x86_64-pc-windows-msvc",
     "x86_64-unknown-linux-musl",
@@ -477,7 +478,7 @@ def selected_environment() -> dict[str, str]:
 
 
 def runtime_compatibility(target: str, binary: Path) -> dict[str, str]:
-    if target == "x86_64-unknown-linux-musl":
+    if target.endswith("-unknown-linux-musl"):
         return musl_compatibility(
             run(["readelf", "--dynamic", str(binary)]),
             run(["readelf", "--program-headers", str(binary)]),

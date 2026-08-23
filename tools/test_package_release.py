@@ -7,11 +7,36 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import package_release
 
 
 class RuntimeCompatibilityTests(unittest.TestCase):
+    def test_declares_aarch64_static_linux_target(self) -> None:
+        self.assertIn("aarch64-unknown-linux-musl", package_release.RELEASE_TARGETS)
+
+    def test_dispatches_aarch64_to_static_musl_validation(self) -> None:
+        with mock.patch.object(
+            package_release,
+            "run",
+            side_effect=[
+                "Dynamic section contains relocation entries only\n",
+                "Elf file type is DYN (Position-Independent Executable file)\n",
+            ],
+        ) as run:
+            compatibility = package_release.runtime_compatibility(
+                "aarch64-unknown-linux-musl", Path("imglean")
+            )
+
+        self.assertEqual(compatibility["linkage"], "static")
+        run.assert_has_calls(
+            [
+                mock.call(["readelf", "--dynamic", "imglean"]),
+                mock.call(["readelf", "--program-headers", "imglean"]),
+            ]
+        )
+
     def test_records_a_static_musl_executable(self) -> None:
         compatibility = package_release.musl_compatibility(
             "Dynamic section contains relocation entries only\n",
