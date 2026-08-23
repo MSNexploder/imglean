@@ -176,7 +176,6 @@ fn publish_with_ops(
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write as _;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use flate2::Compression;

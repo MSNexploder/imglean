@@ -22,7 +22,9 @@ pub fn optimize_rav1e(source: &[u8], quality: u8) -> Result<Vec<u8>, ()> {
     let height = usize::try_from(decoded.height()).map_err(|_| ())?;
     let pixels = decoded
         .as_slice()
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|pixel| RGBA8::new(pixel[0], pixel[1], pixel[2], pixel[3]))
         .collect::<Vec<_>>();
     let encoded = RavifEncoder::new()
@@ -75,7 +77,9 @@ mod tests {
         let source_alpha = libavif::decode_rgb(&source)
             .unwrap()
             .as_slice()
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|pixel| pixel[3])
             .collect::<Vec<_>>();
         assert!(
@@ -91,7 +95,9 @@ mod tests {
             assert_eq!((decoded.width(), decoded.height()), (2, 2));
             let candidate_alpha = decoded
                 .as_slice()
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .map(|pixel| pixel[3])
                 .collect::<Vec<_>>();
             assert_eq!(candidate_alpha.len(), source_alpha.len(), "{strategy}");
