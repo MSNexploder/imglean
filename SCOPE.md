@@ -1,8 +1,8 @@
 # ImgLean Scope
 
 > **Status:** ImgLean 0.6 is the complete first version in source.
-> Target-specific release artifacts remain unpublished until their native
-> qualification gates pass.
+> Version 0.6.0 does not include an ARM64 Linux archive; a subsequent release
+> must pass the target's native qualification gate before publishing one.
 
 This document is the authoritative product boundary: what ImgLean is, what it
 promises, and what it intentionally does not do.
@@ -71,8 +71,8 @@ Version 0.6 provides:
 - optional external pngquant discovery; and
 - explicit executable overrides for supported providers.
 
-Release qualification covers 64-bit Apple Silicon and Intel macOS, a static
-x86-64 Linux executable, x86-64 Windows, and a minimal container for
+Release qualification covers 64-bit Apple Silicon and Intel macOS, static
+x86-64 and ARM64 Linux executables, x86-64 Windows, and a minimal container for
 linux/amd64 and linux/arm64. Each artifact is qualified separately; one
 executable is not claimed to run across platforms.
 

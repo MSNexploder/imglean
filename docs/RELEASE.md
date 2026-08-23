@@ -1,25 +1,25 @@
 # Version 0.6 Release Contract
 
 > [!IMPORTANT]
-> Release automation is implemented, but the native target artifacts and
-> multi-platform Linux container remain unqualified and unpublished until
-> their workflow gates pass.
+> Version 0.6.0 does not include an ARM64 Linux archive. A subsequent release
+> must pass the target's native qualification gate before publishing one.
 
 ## Targets
 
-Version 0.6 release qualification begins with these target-specific artifacts:
+Version 0.6 release qualification covers these target-specific artifacts:
 
 - `aarch64-apple-darwin`;
+- `aarch64-unknown-linux-musl`;
 - `x86_64-apple-darwin`;
 - `x86_64-unknown-linux-musl`; and
 - `x86_64-pc-windows-msvc`.
 
-The macOS archives encode a macOS 15 deployment target. The Linux archive is
-built natively for musl in a pinned Alpine builder and has no ELF interpreter
-or shared-library dependencies. The Windows archive uses the
-`x86_64-pc-windows-msvc` target contract: Windows 10 or newer for client
-systems and Windows Server 2016 or newer for servers. CI runner versions are
-build and test inputs, not user-facing runtime boundaries.
+The macOS archives encode a macOS 15 deployment target. The Linux archives are
+built natively for musl in pinned architecture-specific Alpine builders and
+have no ELF interpreter or shared-library dependencies. The Windows archive
+uses the `x86_64-pc-windows-msvc` target contract: Windows 10 or newer for
+client systems and Windows Server 2016 or newer for servers. CI runner versions
+are build and test inputs, not user-facing runtime boundaries.
 
 The container targets are `linux/amd64` and `linux/arm64`. Each is built and
 smoke-tested on a native runner, and the published version and `latest` tags
@@ -59,16 +59,16 @@ tests use cargo-fuzz `0.13.2` with the exact nightly recorded in
 ## Qualification
 
 The shared source runs the canonical locked formatting, lint, and test gate on
-GNU/Linux, both macOS architectures, and Windows. Each release executable then
-runs target-native tests covering the CLI, every bundled strategy, bounded
-parallel workers, replacing rename publication, metadata, and the packaged
-workflow. The musl job additionally rejects an ELF interpreter or any
-`DT_NEEDED` shared library before archiving the executable.
+both 64-bit GNU/Linux architectures, both macOS architectures, and Windows.
+Each release executable then runs target-native tests covering the CLI, every
+bundled strategy, bounded parallel workers, replacing rename publication,
+metadata, and the packaged workflow. Each musl job additionally rejects an ELF
+interpreter or any `DT_NEEDED` shared library before archiving the executable.
 Windows builds pin CMake's Ninja generator because the bundled Jpegli wrapper
 expects a single-configuration native-library layout.
 Pinned representative OptiPNG, pngquant, MozJPEG, libjpeg-turbo jpegtran,
 Jpegli, and libwebp revisions prove capability discovery and real execution on
-every release target, including the static musl executable. These pins make CI
+every release target, including both static musl executables. These pins make CI
 reproducible; runtime adapters do not gate provider release numbers.
 Representative native filesystems must demonstrate complete replacing rename
 publication. Cross-compilation alone does not qualify a target.
@@ -90,10 +90,10 @@ each qualified image with the release assets.
 The canonical source gate is `mise run check`. Release qualification also runs
 `mise run audit`, regenerates and verifies `THIRD_PARTY_NOTICES.md`, generates
 and parses an SPDX 2.3 SBOM, and builds each release executable natively. The
-Linux job resolves its exact Rust-on-Alpine builder digest, records every
-installed Alpine package version, runs the locked test suite and representative
-external providers inside that builder, and smoke-tests the exact static
-executable before archiving it.
+Linux jobs resolve their exact architecture-specific Rust-on-Alpine builder
+digests, record every installed Alpine package version, run the locked test
+suite and representative external providers inside each builder, and smoke-test
+each exact static executable before archiving it.
 
 Manual dispatch runs the complete qualification workflow and retains native
 archives plus the container image as workflow artifacts without publishing
@@ -164,7 +164,7 @@ must define a fine-grained
 and checksum source.
 
 `tools/package_release.py` refuses a dirty source tree for normal packaging. It
-also accepts only the four declared version 0.6 targets, requires the declared
+also accepts only the five declared version 0.6 targets, requires the declared
 target to equal the native Rust host, enforces the target runtime contract
 (including static linkage for Linux), and requires the release-binary smoke
 corpus to produce a strict size reduction. It

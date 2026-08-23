@@ -124,11 +124,23 @@ jobs:
           path: dist/*
 
   package-linux:
-    name: Package (x86_64-unknown-linux-musl)
+    name: Package (${{ matrix.target }})
     needs:
       - compliance
       - qualification
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux/amd64
+            architecture: amd64
+            target: x86_64-unknown-linux-musl
+          - os: ubuntu-24.04-arm
+            platform: linux/arm64
+            architecture: arm64
+            target: aarch64-unknown-linux-musl
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -143,14 +155,17 @@ jobs:
             docker buildx imagetools inspect "$builder" --raw |
               jq --raw-output '
                 .manifests[] |
-                select(.platform.os == "linux" and .platform.architecture == "amd64") |
+                select(
+                  .platform.os == "linux" and
+                  .platform.architecture == "${{ matrix.architecture }}"
+                ) |
                 .digest
               '
           )
           test -n "$builder_digest"
           build_image="$builder@$builder_digest"
           docker run --rm \
-            --platform linux/amd64 \
+            --platform "${{ matrix.platform }}" \
             --env CMAKE_GENERATOR=Ninja \
             --env CMAKE_POLICY_VERSION_MINIMUM=3.10 \
             --env "IMGLEAN_RELEASE_BUILD_IMAGE=$build_image" \
@@ -162,7 +177,7 @@ jobs:
                 binutils build-base ca-certificates cmake git linux-headers \
                 nasm ninja perl python3
               git config --global --add safe.directory /source
-              target=x86_64-unknown-linux-musl
+              target="${{ matrix.target }}"
               binary="target/$target/release/imglean"
               cargo test --locked --workspace --all-features --target "$target"
               cargo build --locked --release --target "$target"
@@ -177,7 +192,7 @@ jobs:
             '
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: imglean-x86_64-unknown-linux-musl
+          name: imglean-${{ matrix.target }}
           path: dist/*
 
   container:
@@ -284,6 +299,10 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: imglean-x86_64-apple-darwin
+          path: release-assets
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: imglean-aarch64-unknown-linux-musl
           path: release-assets
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
