@@ -32,8 +32,8 @@ NASM used for each image.
 
 ## Build inputs
 
-At release start, the moving stable Rust channel is resolved to one exact
-toolchain and used for all builds. Each artifact records:
+At release start, the exact stable Rust toolchain configured in `mise.toml` is
+used for all release builds. Each artifact records:
 
 - Rust and Cargo versions;
 - the complete dependency lock;
@@ -49,12 +49,13 @@ bit-for-bit reproducible binaries.
 The development configuration currently pins cargo-deny `0.20.2`, cargo-about
 `0.9.1` with its CLI feature, and cargo-sbom `0.10.0`. Their versions are part
 of the release workflow and change only through a reviewed configuration
-update. The release workflow resolves the stable Rust channel once in its
-compliance job, passes that exact version to every native build, and records it
-in each artifact rather than copying it into this contract. The packager's
-Python version is recorded per artifact. Validator fuzzing and native sanitizer
-tests use cargo-fuzz `0.13.2` with the exact nightly recorded in
-`ci/rust-nightly-version.txt`; that nightly is not used for release binaries.
+update. The release workflow resolves the configured stable Rust toolchain once
+in its compliance job, passes that exact version to every native build, and
+records it in each artifact rather than copying it into this contract. The
+packager's Python version is recorded per artifact. Native sanitizer tests use
+the configured stable toolchain. Validator fuzzing uses cargo-fuzz `0.13.2`
+with the exact nightly recorded in `ci/rust-nightly-version.txt`; that nightly
+is not used for release binaries.
 
 ## Qualification
 

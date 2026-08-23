@@ -1,4 +1,4 @@
-ARG RUST_IMAGE=rust:1.97.1-bookworm
+ARG RUST_IMAGE=rust:1.98.0-bookworm
 FROM ${RUST_IMAGE} AS build
 
 RUN apt-get update \
@@ -19,7 +19,7 @@ COPY . .
 RUN cargo build --locked --release \
     && strip target/release/imglean
 
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:d97bc0a941b8d4be647dc0ee75b264ddbb772f1ac5ba690a4309c00723b23775
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:a77defd6fedbb3392b175ba8ea3d1c22be963c1597c248c3ba987ddd80bfb512
 
 ARG VERSION=dev
 ARG SOURCE_COMMIT=unknown
