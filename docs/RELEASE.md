@@ -60,6 +60,11 @@ from its `jconfig.h.in`; native CI must execute the adapters on every target.
 Release inventories, SBOMs, and notices record native inputs and adapted Rust
 wrapper portions separately from Cargo dependencies.
 
+`mise.lock` records the configured tool versions and Python's attested download
+URLs and checksums for every CI platform. These URLs let clean installs use the
+pinned build even before mise's Python index includes a new release. Refresh the
+lock with `mise lock` when upgrading tools; retain all five CI platforms.
+
 At release start, the exact stable Rust toolchain configured in `mise.toml` is
 used for all release builds. Each artifact records:
 
@@ -75,7 +80,7 @@ This record supports audit and reconstruction. Version 0.6 does not promise
 bit-for-bit reproducible binaries.
 
 The development configuration currently pins cargo-deny `0.20.2`, cargo-about
-`0.9.1` with its CLI feature, and cargo-sbom `0.10.0`. Their versions are part
+`0.9.3` with its CLI feature, and cargo-sbom `0.10.0`. Their versions are part
 of the release workflow and change only through a reviewed configuration
 update. The release workflow resolves the configured stable Rust toolchain once
 in its compliance job, passes that exact version to every native build, and

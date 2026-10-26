@@ -1723,6 +1723,62 @@ limitations under the License.
 
 Used by:
 
+- rav1e 0.8.1
+
+```text
+; Copyright © 2019-2022, VideoLAN and dav1d authors
+; Copyright © 2019-2022, Two Orioles, LLC
+; All rights reserved.
+;
+; Redistribution and use in source and binary forms, with or without
+; modification, are permitted provided that the following conditions are met:
+;
+; 1. Redistributions of source code must retain the above copyright notice, this
+;    list of conditions and the following disclaimer.
+;
+; 2. Redistributions in binary form must reproduce the above copyright notice,
+;    this list of conditions and the following disclaimer in the documentation
+;    and/or other materials provided with the distribution.
+;
+; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+; ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+; WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+; DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+; ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+; (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+; ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+; (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+struc FGData
+    .seed:                      resd 1
+    .num_y_points:              resd 1
+    .y_points:                  resb 14 * 2
+    .chroma_scaling_from_luma:  resd 1
+    .num_uv_points:             resd 2
+    .uv_points:                 resb 2 * 10 * 2
+    .scaling_shift:             resd 1
+    .ar_coeff_lag:              resd 1
+    .ar_coeffs_y:               resb 24
+    .ar_coeffs_uv:              resb 2 * 28 ; includes padding
+    .ar_coeff_shift:            resq 1
+    .grain_scale_shift:         resd 1
+    .uv_mult:                   resd 2
+    .uv_luma_mult:              resd 2
+    .uv_offset:                 resd 2
+    .overlap_flag:              resd 1
+    .clip_to_restricted_range:  resd 1
+endstruc
+
+cextern gaussian_sequence
+
+```
+
+## BSD 2-Clause &quot;Simplified&quot; License
+
+Used by:
+
 - v_frame 0.3.9
 
 ```text
@@ -1853,6 +1909,86 @@ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
 ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+```
+
+## BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
+
+Used by:
+
+- mozjpeg-sys 2.2.3
+
+```text
+/*
+ * Copyright (C)2011, 2019 D. R. Commander.  All Rights Reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * - Redistributions of source code must retain the above copyright notice,
+ *   this list of conditions and the following disclaimer.
+ * - Redistributions in binary form must reproduce the above copyright notice,
+ *   this list of conditions and the following disclaimer in the documentation
+ *   and/or other materials provided with the distribution.
+ * - Neither the name of the libjpeg-turbo Project nor the names of its
+ *   contributors may be used to endorse or promote products derived from this
+ *   software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS",
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
+#ifdef _WIN32
+
+#include <windows.h>
+#include "tjutil.h"
+
+static double getFreq(void)
+{
+  LARGE_INTEGER freq;
+
+  if (!QueryPerformanceFrequency(&freq)) return 0.0;
+  return (double)freq.QuadPart;
+}
+
+static double f = -1.0;
+
+double getTime(void)
+{
+  LARGE_INTEGER t;
+
+  if (f < 0.0) f = getFreq();
+  if (f == 0.0) return (double)GetTickCount() / 1000.;
+  else {
+    QueryPerformanceCounter(&t);
+    return (double)t.QuadPart / f;
+  }
+}
+
+#else
+
+#include <stdlib.h>
+#include <sys/time.h>
+#include "tjutil.h"
+
+double getTime(void)
+{
+  struct timeval tv;
+
+  if (gettimeofday(&tv, NULL) < 0) return 0.0;
+  else return (double)tv.tv_sec + ((double)tv.tv_usec / 1000000.);
+}
+
+#endif
 
 ```
 
@@ -2644,6 +2780,53 @@ Used by:
 #define ALIGN(alignment)  __declspec(align(alignment))
 #elif defined(__clang__) || defined(__GNUC__)
 #define ALIGN(alignment)  __attribute__((aligned(alignment)))
+#else
+#error "Unknown compiler"
+#endif
+
+```
+
+## zlib License
+
+Used by:
+
+- mozjpeg-sys 2.2.3
+
+```text
+/*
+ * Copyright (C) 2020, D. R. Commander.  All Rights Reserved.
+ * Copyright (C) 2020-2021, Arm Limited.  All Rights Reserved.
+ *
+ * This software is provided 'as-is', without any express or implied
+ * warranty.  In no event will the authors be held liable for any damages
+ * arising from the use of this software.
+ *
+ * Permission is granted to anyone to use this software for any purpose,
+ * including commercial applications, and to alter it and redistribute it
+ * freely, subject to the following restrictions:
+ *
+ * 1. The origin of this software must not be misrepresented; you must not
+ *    claim that you wrote the original software. If you use this software
+ *    in a product, an acknowledgment in the product documentation would be
+ *    appreciated but is not required.
+ * 2. Altered source versions must be plainly marked as such, and must not be
+ *    misrepresented as being the original software.
+ * 3. This notice may not be removed or altered from any source distribution.
+ */
+
+#cmakedefine HAVE_VLD1_S16_X3
+#cmakedefine HAVE_VLD1_U16_X2
+#cmakedefine HAVE_VLD1Q_U8_X4
+
+/* Define compiler-independent count-leading-zeros and byte-swap macros */
+#if defined(_MSC_VER) && !defined(__clang__)
+#define BUILTIN_CLZ(x)  _CountLeadingZeros(x)
+#define BUILTIN_CLZLL(x)  _CountLeadingZeros64(x)
+#define BUILTIN_BSWAP64(x)  _byteswap_uint64(x)
+#elif defined(__clang__) || defined(__GNUC__)
+#define BUILTIN_CLZ(x)  __builtin_clz(x)
+#define BUILTIN_CLZLL(x)  __builtin_clzll(x)
+#define BUILTIN_BSWAP64(x)  __builtin_bswap64(x)
 #else
 #error "Unknown compiler"
 #endif

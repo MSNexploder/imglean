@@ -1,4 +1,4 @@
-ARG RUST_IMAGE=rust:1.98.0-trixie
+ARG RUST_IMAGE=rust:1.99.1-trixie
 FROM ${RUST_IMAGE} AS build
 
 RUN apt-get update \
@@ -20,7 +20,7 @@ RUN python3 tools/prepare_native.py \
     && cargo build --locked --release \
     && strip target/release/imglean
 
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:a77defd6fedbb3392b175ba8ea3d1c22be963c1597c248c3ba987ddd80bfb512
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:3ee00291cf386ec52a552e6a858d555debd74776eb4bfa53fa3df2cd6677515e
 
 ARG VERSION=dev
 ARG SOURCE_COMMIT=unknown
