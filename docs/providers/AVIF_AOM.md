@@ -1,9 +1,10 @@
 # Bundled libavif/libaom Strategy
 
 `avif-aom` is enabled for AVIF only at numeric quality. It uses libavif
-0.14.0 with the vendored libavif 1.0.4 container library and libaom 3.11.0 AV1
+through a focused local adapter with libavif 1.4.2 and libaom 3.15.2 AV1
 codec. The strategy pins native quality `Q`, alpha quality 100, speed 6, and one
-thread.
+thread. Color and alpha tuning stay explicitly SSIM to preserve the previous
+quality mapping.
 
 The decoded libavif image is re-encoded directly. The selected API exposes no
 metadata-removal control, so the strategy emits its normal output and remains

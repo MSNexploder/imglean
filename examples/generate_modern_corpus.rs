@@ -3,7 +3,6 @@ use std::fs;
 use std::path::Path;
 
 use image_webp::{ColorType, WebPEncoder};
-use libavif::{AvifImage, Encoder};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output = env::args_os().nth(1).ok_or("missing output directory")?;
@@ -29,14 +28,9 @@ fn encode_webp(path: &Path, width: u32, height: u32) -> Result<(), Box<dyn std::
 }
 
 fn encode_avif(path: &Path, width: u32, height: u32) -> Result<(), Box<dyn std::error::Error>> {
-    let image = AvifImage::from_luma8(width, height, &pixels(width, height))?;
-    let mut encoder = Encoder::new();
-    encoder
-        .set_quality(72)
-        .set_alpha_quality(100)
-        .set_speed(6)
-        .set_max_threads(1);
-    fs::write(path, &*encoder.encode(&image)?)?;
+    let encoded = imglean_avif::encode_gray(width, height, &pixels(width, height), 72)
+        .map_err(|()| "could not encode grayscale AVIF corpus image")?;
+    fs::write(path, encoded)?;
     Ok(())
 }
 

@@ -32,10 +32,10 @@ configuration. They add no useful candidate diversity.
 
 `avif-aom` uses libavif with libaom, the reference AV1 implementation.
 libavif provides the production AVIF container API and explicitly supports
-libaom, rav1e, and SVT-AV1 encoder backends. The locked Rust integration is
-`libavif` 0.14.0, which vendors libavif 1.0.4 and libaom 3.11.0. This is older
-than upstream libavif 1.4.2, so the exact locked native revisions are recorded
-as a release fact and must continue to pass dependency/advisory review.
+libaom, rav1e, and SVT-AV1 encoder backends. The private `imglean-avif` crate
+adapts the operations used from libavif-rs 0.14.0 and builds checksum-pinned
+libavif 1.4.2 and libaom 3.15.2. Exact native sources and adapted Rust portions
+are recorded separately in the release inventory.
 
 `avif-rav1e` uses ravif 0.13.0 and rav1e 0.8.1. rav1e is an actively
 maintained AV1 encoder with a still-picture mode and weekly prereleases. This

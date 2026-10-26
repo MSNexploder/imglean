@@ -21,6 +21,9 @@ ignore = false
 multiple-versions = "deny"
 wildcards = "deny"
 highlight = "all"
+skip = [
+  { crate = "miniz_oxide@0.8.9", reason = "png 0.18.1 requires miniz_oxide 0.8 while flate2 1.1.10 requires 0.9; remove when png supports 0.9" },
+]
 
 [sources]
 unknown-registry = "deny"

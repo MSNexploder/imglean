@@ -11,10 +11,3 @@ targets = [
 ignore-build-dependencies = false
 ignore-dev-dependencies = true
 ignore-transitive-dependencies = false
-
-[jpegli-sys.clarify]
-license = "BSD-3-Clause"
-
-[[jpegli-sys.clarify.files]]
-path = "LICENSE"
-checksum = "2fbf612cf8db413c570f11b875cf96d89266c275b4712902e76d7375a1902624"

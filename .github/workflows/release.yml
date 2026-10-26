@@ -179,6 +179,7 @@ jobs:
               git config --global --add safe.directory /source
               target="${{ matrix.target }}"
               binary="target/$target/release/imglean"
+              python3 tools/prepare_native.py
               cargo test --locked --workspace --all-features --target "$target"
               cargo build --locked --release --target "$target"
               python3 -B tools/test_package_release.py
@@ -216,7 +217,7 @@ jobs:
       - name: Build minimal container
         shell: bash
         run: |
-          builder="docker.io/library/rust:${{ needs.compliance.outputs.rust_version }}-bookworm"
+          builder="docker.io/library/rust:${{ needs.compliance.outputs.rust_version }}-trixie"
           builder_digest=$(
             docker buildx imagetools inspect "$builder" --raw |
               jq --raw-output '

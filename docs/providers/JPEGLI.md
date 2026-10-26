@@ -1,8 +1,10 @@
 # Bundled Jpegli Strategy
 
 `jpegli` is enabled by default for JPEG inputs at numeric quality. ImgLean
-bundles the BSD-3-Clause `jpegli` 0.1.0 wrapper, whose `jpegli-sys` package
-contains the namespaced Jpegli 0.10.2 native source. Namespaced symbols allow it
+uses the in-memory operations adapted from the BSD-3-Clause `jpegli` 0.1.0
+wrapper. The native source and Highway 1.4.0 are checksum-pinned in
+`ci/native-sources.json`, with local declarations for the used ABI-8 API.
+Namespaced symbols allow it
 to coexist with MozJPEG in one executable. The validated JPEG is decoded to
 grayscale or RGB samples and re-encoded with the native quality value,
 progressive scans, and optimized entropy coding.
@@ -14,9 +16,8 @@ This remains provider-native best effort, and the common JPEG candidate gate
 independently validates the result. Native code runs only inside the provider
 worker.
 
-The Rust wrapper is older than current upstream Jpegli, so its exact revision is
-recorded in the release metadata rather than presented as a floating latest
-release. An explicit `--provider jpegli PATH` can test or use a newer
+Only the decode, encode, marker, and error-handling operations used by ImgLean
+are retained. Native versions and source hashes are recorded in release metadata. An explicit `--provider jpegli PATH` can test or use a newer
 compatible `cjpegli` without rebuilding ImgLean. The override is capability-
 probed and invoked as:
 

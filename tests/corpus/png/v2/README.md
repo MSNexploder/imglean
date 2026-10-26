@@ -10,3 +10,6 @@ reductions for the lossless and lossy provider integration tests.
 
 The validator test enumerates every accepted and policy-rejected fixture
 explicitly so a corpus change requires a reviewed expectation change.
+
+`indexed-histogram.png` exercises a valid hIST chunk after PLTE. This covers
+the libpng 1.6.47–1.6.58 chunk-order regression through the bundled optimizer.

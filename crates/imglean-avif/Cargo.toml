@@ -1,0 +1,10 @@
+[package]
+name = "imglean-avif"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "BSD-2-Clause"
+description = "The libavif operations used by ImgLean validation and providers"
+
+[build-dependencies]
+cmake = "=0.1.58"

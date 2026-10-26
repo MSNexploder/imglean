@@ -9,7 +9,7 @@ keywords = ["image", "optimization", "compression", "cli"]
 categories = ["command-line-utilities", "multimedia::images"]
 
 [workspace]
-members = ["crates/imglean-codecs"]
+members = ["crates/imglean-codecs", "crates/imglean-avif"]
 resolver = "3"
 
 [lints.rust]
@@ -21,23 +21,15 @@ todo = "deny"
 unimplemented = "deny"
 
 [dependencies]
-crc32fast = "=1.5.0"
-flate2 = { version = "=1.1.9", default-features = false, features = ["rust_backend"] }
+crc32fast = "=1.5.3"
+flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
 image-webp = "=0.2.4"
 imglean-codecs = { version = "=0.1.0", path = "crates/imglean-codecs" }
-libavif = { version = "=0.14.0", default-features = false, features = ["codec-aom"] }
-oxipng = { version = "=10.2.0", default-features = false, features = ["zopfli"] }
+imglean-avif = { version = "=0.1.0", path = "crates/imglean-avif" }
+oxipng = { version = "=10.2.1", default-features = false, features = ["zopfli"] }
 png = { version = "=0.18.1", default-features = false }
 same-file = "=1.0.6"
 zune-jpeg = { version = "=0.5.15", default-features = false, features = ["log", "std"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Storage_FileSystem"] }
-
-# jpegli-sys lets cmake-rs derive the CMake profile from Cargo's optimization
-# level. Avoid CMake's MSVC debug CRT in Cargo's dev and test profiles.
-[profile.dev.package.jpegli-sys]
-opt-level = 1
-
-[profile.test.package.jpegli-sys]
-opt-level = 1

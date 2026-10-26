@@ -1,6 +1,6 @@
 # Bundled OxiPNG Strategies
 
-The controller's format validator decides candidate acceptance. OxiPNG 10.2.0
+The controller's format validator decides candidate acceptance. OxiPNG 10.2.1
 runs only inside the private worker role, with default features disabled except
 the explicitly enabled Zopfli backend.
 

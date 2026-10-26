@@ -124,6 +124,8 @@ jobs:
           brew install nasm
           echo "IMGLEAN_NASM=$(brew --prefix nasm)/bin/nasm" >> "$GITHUB_ENV"
           echo "$GITHUB_WORKSPACE/ci/nasm" >> "$GITHUB_PATH"
+      - name: Prepare pinned native build inputs
+        run: mise run native:prepare
       - name: Build ImgLean once for all provider checks
         run: cargo build --locked --release --target ${{ matrix.target }}
       - name: Build and exercise every external provider
@@ -139,6 +141,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends nasm
+      - name: Prepare pinned native build inputs
+        run: mise run native:prepare
       - name: Verify every generated format corpus
         shell: bash
         run: |
@@ -178,7 +182,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
-          install_args: rust
+          install_args: rust python
       - name: Install pinned toolchains and native build tools
         shell: bash
         run: |
@@ -187,6 +191,8 @@ jobs:
           cargo +"$RUSTUP_TOOLCHAIN" install --locked --version 0.13.2 cargo-fuzz
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends nasm
+      - name: Prepare pinned native build inputs
+        run: mise run native:prepare
       - name: Run native codec tests with AddressSanitizer
         shell: bash
         env:

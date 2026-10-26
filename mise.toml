@@ -20,6 +20,7 @@ run = [
 ]
 
 [tasks.lint]
+depends = ["native:prepare"]
 description = "Lint every target and feature"
 run = [
   "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
@@ -27,6 +28,7 @@ run = [
 ]
 
 [tasks.test]
+depends = ["native:prepare"]
 description = "Run the complete test suite"
 run = "cargo test --locked --workspace --all-features"
 
@@ -44,27 +46,37 @@ description = "Validate release packaging tools"
 run = [
   "python -B tools/test_homebrew_formula.py",
   "python -B tools/test_package_release.py",
+  "python -B tools/test_prepare_native.py",
 ]
 
 [tasks.dev]
+depends = ["native:prepare"]
 description = "Run the development CLI"
 run = "cargo run --locked --"
 
 [tasks.audit]
+depends = ["native:prepare"]
 description = "Audit dependency advisories, licenses, duplicates, and sources"
 # cargo-deny's --locked protects Cargo.lock; only --offline disables advisory fetches.
 run = [
   "cargo deny --locked check advisories bans licenses sources",
   "cargo deny --locked --manifest-path fuzz/Cargo.toml --config fuzz/deny.toml check advisories bans licenses sources",
+  "python -B tools/generate_notices.py --check-native",
 ]
 
 [tasks.notices]
+depends = ["native:prepare"]
 description = "Generate bundled third-party notices"
 run = "python tools/generate_notices.py"
 
 [tasks.sbom]
+depends = ["native:prepare"]
 description = "Generate an SPDX 2.3 software bill of materials"
 run = [
   "python -c \"from pathlib import Path; Path('target').mkdir(exist_ok=True)\"",
   "python tools/generate_sbom.py > target/imglean.spdx.json",
 ]
+
+[tasks."native:prepare"]
+description = "Prepare checksum-pinned native build sources"
+run = "python tools/prepare_native.py"
