@@ -65,7 +65,7 @@ fn validate(bytes: &[u8], maximum_encoded_bytes: u64) -> Result<ValidatedAvif, V
     }
     inspect_container(bytes, started)?;
     let decoded =
-        imglean_avif::decode_rgb(bytes).map_err(|_| error("AVIF image data is invalid"))?;
+        imglean_codecs::avif::decode_rgb(bytes).map_err(|_| error("AVIF image data is invalid"))?;
     let (width, height) = (decoded.width(), decoded.height());
     validate_dimensions(width, height)?;
     if decoded.as_slice().len() > MAX_RECONSTRUCTED_BYTES {

@@ -39,11 +39,14 @@ Preparation adapts Jpegli's CMake date definitions for the Windows resource
 compiler and its expected libjpeg-turbo header locations. It never runs from
 the CLI. The Debian 13 builder supplies Python's safe archive extraction API.
 
-The private `imglean-avif` crate retains only decoding to RGBA, fixed-policy
+The private `imglean-codecs::avif` module retains only decoding to RGBA, fixed-policy
 AOM optimization, and grayscale corpus generation from libavif-rs 0.14.0.
 Jpegli's adapter retains only the in-memory path from jpegli 0.1.0. Both retain
 upstream copyright notices. Their native declarations include only the used
 functions and required layouts. Pointees that are never accessed remain opaque.
+ImgLean's native build configuration lives in `imglean-codecs`. The validator
+fuzz harness uses its decoding API and builds the same codec dependencies as
+the CLI.
 
 Regenerate the checked-in declarations with bindgen-cli 0.73.2 after preparing
 and building the native inputs:

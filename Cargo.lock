@@ -329,7 +329,6 @@ dependencies = [
  "crc32fast",
  "flate2",
  "image-webp",
- "imglean-avif",
  "imglean-codecs",
  "oxipng",
  "png",
@@ -339,20 +338,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "imglean-avif"
-version = "0.1.0"
-dependencies = [
- "cmake",
-]
-
-[[package]]
 name = "imglean-codecs"
 version = "0.1.0"
 dependencies = [
  "cc",
  "cmake",
  "image-webp",
- "imglean-avif",
  "libc",
  "libwebp-sys",
  "libz-sys",

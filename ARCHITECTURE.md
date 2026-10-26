@@ -59,8 +59,12 @@ produce bytes or fail; it cannot accept its own result, select the winner, or
 publish output.
 
 Validators are format-specific but provider-independent. They enforce the
-documented structural, decode, dimension, resource, C2PA, and XMP gates. The
-audited provider configuration establishes transformation semantics such as
+documented structural, decode, dimension, resource, C2PA, and XMP gates.
+The private `imglean-codecs` library groups native adapters and their project
+build configuration. AVIF validation calls its decoding API directly;
+validation rules remain in format validators, separate from optimization
+entrypoints. The audited provider
+configuration establishes transformation semantics such as
 lossless behavior and metadata handling.
 
 ## Failure model

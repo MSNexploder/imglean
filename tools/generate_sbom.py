@@ -119,7 +119,7 @@ def main() -> int:
     for parent, child in [
         (cargo_ids["imglean-codecs"], "libpng"),
         (f"SPDXRef-Package-optipng-{OPTIPNG_VERSION}", "libpng"),
-        (cargo_ids["imglean-avif"], "libavif"),
+        (cargo_ids["imglean-codecs"], "libavif"),
         (native_ids["libavif"], "libaom"),
         (cargo_ids["imglean-codecs"], "jpegli"),
         (native_ids["jpegli"], "highway"),
@@ -136,7 +136,7 @@ def main() -> int:
         "relationshipType": "DEPENDS_ON",
     })
     for name, version, license_id, owner in [
-        ("libavif", "0.14.0", "BSD-2-Clause", "imglean-avif"),
+        ("libavif", "0.14.0", "BSD-2-Clause", "imglean-codecs"),
         ("jpegli", "0.1.0", "BSD-3-Clause", "imglean-codecs"),
     ]:
         adapted_id = f"SPDXRef-Adapted-{name}"

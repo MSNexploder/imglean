@@ -79,7 +79,7 @@ def main() -> None:
     for name in ["jpeg_component_info", "jpeg_scan_info", "jpeg_memory_mgr", "jpeg_progress_mgr",
                  "JQUANT_TBL", "JHUFF_TBL"]:
         jpegli += f"\n#[repr(C)]\npub struct {name} {{ _private: [u8; 0] }}\n"
-    for relative, contents in [("crates/imglean-avif/src/ffi.rs", avif),
+    for relative, contents in [("crates/imglean-codecs/src/avif_ffi.rs", avif),
                                ("crates/imglean-codecs/src/jpegli_ffi.rs", jpegli)]:
         (ROOT / relative).write_text(contents)
 

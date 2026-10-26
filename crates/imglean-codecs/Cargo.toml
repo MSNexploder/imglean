@@ -11,7 +11,6 @@ unsafe_code = "deny"
 [dependencies]
 libc = "=0.2.191"
 image-webp = "=0.2.4"
-imglean-avif = { version = "=0.1.0", path = "../imglean-avif" }
 libz-sys = { version = "=1.1.30", features = ["static"] }
 libwebp-sys = "=0.14.4"
 mozjpeg = { version = "=0.10.13", default-features = false }

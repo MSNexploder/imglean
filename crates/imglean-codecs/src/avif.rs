@@ -1,18 +1,8 @@
 //! ImgLean's used subset of libavif-rs 0.14.0 (Charles Samuels and Paolo
-//! Barbolini). See LICENSE for the original BSD-2-Clause notice.
-#![allow(clippy::result_unit_err)]
-
+//! Barbolini). See licenses/libavif-rs-LICENSE for the BSD-2-Clause notice.
+use super::avif_ffi as sys;
 use std::ptr::NonNull;
 use std::slice;
-
-#[allow(
-    dead_code,
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals
-)]
-mod ffi;
-use ffi as sys;
 
 /// An owned, eight-bit RGBA decode. The native allocation stays private.
 pub struct RgbaImage(sys::avifRGBImage);
