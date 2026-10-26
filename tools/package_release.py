@@ -153,7 +153,6 @@ def dependency_inventory(packages: list[dict[str, Any]]) -> str:
     lines.extend(
         [
             "cexcept\t2.99-optipng\tZlib\tvendored",
-            "highway\t1.1.0\tApache-2.0\tvendored by jpegli-sys",
             "libwebp\t"
             f"{(ROOT / 'ci/libwebp-version.txt').read_text().strip()}"
             "\tBSD-3-Clause\tvendored by libwebp-sys",
@@ -162,6 +161,15 @@ def dependency_inventory(packages: list[dict[str, Any]]) -> str:
             "\tZlib AND Libpng\tvendored",
         ]
     )
+    for source in json.loads((ROOT / "ci/native-sources.json").read_text()):
+        lines.append("\t".join(
+            [source["name"], source["version"], source["license"],
+             f"{source['url']}#sha256={source['sha256']}"]
+        ))
+    lines.extend([
+        "libavif-rust-adapted\t0.14.0\tBSD-2-Clause\thttps://crates.io/crates/libavif/0.14.0",
+        "jpegli-rust-adapted\t0.1.0\tBSD-3-Clause\thttps://crates.io/crates/jpegli/0.1.0",
+    ])
     return "name\tversion\tlicense\tsource\n" + "\n".join(sorted(lines)) + "\n"
 
 
@@ -174,6 +182,10 @@ def release_manifest(
     rustc: str,
 ) -> dict[str, Any]:
     versions = {package["name"]: package["version"] for package in packages}
+    native_versions = {
+        source["name"]: source["version"]
+        for source in json.loads((ROOT / "ci/native-sources.json").read_text())
+    }
     identities = {
         package["id"]: f"{package['name']} {package['version']}" for package in packages
     }
@@ -183,7 +195,7 @@ def release_manifest(
         if node["id"] in identities
     }
     return {
-        "schema_version": 12,
+        "schema_version": 13,
         "package": "imglean",
         "version": tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"],
         "source_commit": run(["git", "rev-parse", "HEAD"]),
@@ -207,6 +219,7 @@ def release_manifest(
             "3": "successful processing with optimizer warnings and no check reduction",
             "4": "check found at least one smaller accepted candidate",
         },
+        "native_sources": json.loads((ROOT / "ci/native-sources.json").read_text()),
         "bundled_providers": {
             "oxipng": versions.get("oxipng"),
             "libdeflater": versions.get("libdeflater"),
@@ -214,18 +227,16 @@ def release_manifest(
             "zopfli": versions.get("zopfli"),
             "optipng": (ROOT / "ci/optipng-version.txt").read_text().strip(),
             "cexcept": "2.99-optipng",
-            "highway": "1.1.0",
+            "highway": native_versions["highway"],
+            "libpng": native_versions["libpng"],
+            "libavif": native_versions["libavif"],
+            "libaom": native_versions["libaom"],
             "mozjpeg": versions.get("mozjpeg"),
             "mozjpeg-sys": versions.get("mozjpeg-sys"),
-            "jpegli": versions.get("jpegli"),
-            "jpegli-sys": versions.get("jpegli-sys"),
-            "libpng-sys": versions.get("libpng-sys"),
+            "jpegli": native_versions["jpegli"],
             "image-webp": versions.get("image-webp"),
             "libwebp": (ROOT / "ci/libwebp-version.txt").read_text().strip(),
             "libwebp-sys": versions.get("libwebp-sys"),
-            "libavif": versions.get("libavif"),
-            "libavif-sys": versions.get("libavif-sys"),
-            "libaom-sys": versions.get("libaom-sys"),
             "ravif": versions.get("ravif"),
             "rav1e": versions.get("rav1e"),
         },
@@ -270,14 +281,14 @@ def release_manifest(
                 "id": "oxipng-libdeflate",
                 "execution": "bundled",
                 "format": "PNG",
-                "settings": "OxiPNG 10.2.0, pinned filters, libdeflater level 11",
+                "settings": "OxiPNG 10.2.1, pinned filters, libdeflater level 11",
                 "metadata": "preserve by default; OxiPNG Safe with --strip-metadata",
             },
             {
                 "id": "oxipng-zopfli",
                 "execution": "bundled",
                 "format": "PNG",
-                "settings": "OxiPNG 10.2.0, pinned filters, Zopfli 15 iterations",
+                "settings": "OxiPNG 10.2.1, pinned filters, Zopfli 15 iterations",
                 "metadata": "preserve by default; OxiPNG Safe with --strip-metadata",
             },
             {

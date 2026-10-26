@@ -7,6 +7,8 @@ import json
 import subprocess
 from pathlib import Path
 
+from prepare_native import MANIFEST
+
 
 ROOT = Path(__file__).resolve().parent.parent
 OPTIPNG_VERSION = (ROOT / "ci/optipng-version.txt").read_text().strip()
@@ -42,24 +44,6 @@ def main() -> int:
                 "licenseDeclared": "BSD-3-Clause",
                 "name": "libwebp",
                 "versionInfo": LIBWEBP_VERSION,
-            },
-            {
-                "SPDXID": "SPDXRef-Package-highway-1.1.0",
-                "downloadLocation": "https://github.com/google/highway/releases/tag/1.1.0",
-                "externalRefs": [
-                    {
-                        "referenceCategory": "PACKAGE-MANAGER",
-                        "referenceLocator": "pkg:generic/highway@1.1.0",
-                        "referenceType": "purl",
-                    }
-                ],
-                "homepage": "https://github.com/google/highway",
-                "copyrightText": "NOASSERTION",
-                "filesAnalyzed": False,
-                "licenseConcluded": "Apache-2.0",
-                "licenseDeclared": "Apache-2.0",
-                "name": "highway",
-                "versionInfo": "1.1.0",
             },
             {
                 "SPDXID": "SPDXRef-Package-cexcept-2.99-optipng",
@@ -110,11 +94,6 @@ def main() -> int:
                 "spdxElementId": "SPDXRef-Package-libwebp-sys-0.14.4",
             },
             {
-                "relatedSpdxElement": "SPDXRef-Package-highway-1.1.0",
-                "relationshipType": "DEPENDS_ON",
-                "spdxElementId": "SPDXRef-Package-jpegli-sys-0.1.0-plus-0.10.2",
-            },
-            {
                 "relatedSpdxElement": f"SPDXRef-Package-optipng-{OPTIPNG_VERSION}",
                 "relationshipType": "DEPENDS_ON",
                 "spdxElementId": "SPDXRef-Package-imglean-codecs-0.1.0",
@@ -124,13 +103,54 @@ def main() -> int:
                 "relationshipType": "DEPENDS_ON",
                 "spdxElementId": f"SPDXRef-Package-optipng-{OPTIPNG_VERSION}",
             },
-            {
-                "relatedSpdxElement": "SPDXRef-Package-libpng-sys-1.1.11",
-                "relationshipType": "DEPENDS_ON",
-                "spdxElementId": f"SPDXRef-Package-optipng-{OPTIPNG_VERSION}",
-            },
         ]
     )
+    cargo_ids = {package["name"]: package["SPDXID"] for package in document["packages"]}
+    sources = json.loads(MANIFEST.read_text())
+    native_ids = {source["name"]: f"SPDXRef-Native-{source['name']}" for source in sources}
+    for source in sources:
+        document["packages"].append({
+            "SPDXID": native_ids[source["name"]], "name": source["name"],
+            "versionInfo": source["version"], "downloadLocation": source["url"],
+            "filesAnalyzed": False, "copyrightText": "NOASSERTION",
+            "licenseConcluded": source["license"], "licenseDeclared": source["license"],
+            "checksums": [{"algorithm": "SHA256", "checksumValue": source["sha256"]}],
+        })
+    for parent, child in [
+        (cargo_ids["imglean-codecs"], "libpng"),
+        (f"SPDXRef-Package-optipng-{OPTIPNG_VERSION}", "libpng"),
+        (cargo_ids["imglean-avif"], "libavif"),
+        (native_ids["libavif"], "libaom"),
+        (cargo_ids["imglean-codecs"], "jpegli"),
+        (native_ids["jpegli"], "highway"),
+        (native_ids["jpegli"], "libjpeg-turbo-headers"),
+        (native_ids["jpegli"], "skcms"),
+    ]:
+        document["relationships"].append({
+            "spdxElementId": parent, "relatedSpdxElement": native_ids[child],
+            "relationshipType": "DEPENDS_ON",
+        })
+    document["relationships"].append({
+        "spdxElementId": native_ids["libpng"],
+        "relatedSpdxElement": cargo_ids["libz-sys"],
+        "relationshipType": "DEPENDS_ON",
+    })
+    for name, version, license_id, owner in [
+        ("libavif", "0.14.0", "BSD-2-Clause", "imglean-avif"),
+        ("jpegli", "0.1.0", "BSD-3-Clause", "imglean-codecs"),
+    ]:
+        adapted_id = f"SPDXRef-Adapted-{name}"
+        document["packages"].append({
+            "SPDXID": adapted_id, "name": f"{name}-rust-adapted", "versionInfo": version,
+            "downloadLocation": f"https://crates.io/crates/{name}/{version}",
+            "filesAnalyzed": False, "copyrightText": "NOASSERTION",
+            "licenseConcluded": license_id, "licenseDeclared": license_id,
+            "comment": "Only the operations used by ImgLean are adapted into local source.",
+        })
+        document["relationships"].append({
+            "spdxElementId": cargo_ids[owner], "relatedSpdxElement": adapted_id,
+            "relationshipType": "CONTAINS",
+        })
     print(json.dumps(document, indent=2, sort_keys=True))
     return 0
 

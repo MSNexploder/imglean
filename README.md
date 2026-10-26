@@ -139,6 +139,11 @@ mise install
 mise run check
 ```
 
+`mise run native:prepare` downloads and verifies the native source archives
+pinned in `ci/native-sources.json`. The lint, test, audit, notices, and SBOM
+tasks prepare these inputs automatically. Run preparation before invoking
+Cargo directly. The built CLI remains offline.
+
 `mise run check` is the canonical development gate. It checks formatting,
 runs warnings-as-errors linting, executes the full test suite, and verifies
 Homebrew formula generation.

@@ -250,6 +250,7 @@ mod tests {
             include_bytes!("../tests/corpus/png/v2/accepted/adam7.png").as_slice(),
             include_bytes!("../tests/corpus/png/v2/accepted/ancillary-before-after.png").as_slice(),
             include_bytes!("../tests/corpus/png/v2/accepted/indexed-transparency.png").as_slice(),
+            include_bytes!("../tests/corpus/png/v2/accepted/indexed-histogram.png").as_slice(),
             include_bytes!("../tests/corpus/png/v2/accepted/compressed-text.png").as_slice(),
             include_bytes!("../tests/corpus/png/v2/accepted/international-text.png").as_slice(),
             include_bytes!("../tests/corpus/png/v2/accepted/icc-profile.png").as_slice(),

@@ -74,6 +74,41 @@ fn check_succeeds_when_no_enabled_strategy_can_reduce_the_input() {
 }
 
 #[test]
+fn bundled_optipng_accepts_palette_histograms() {
+    let directory = TestDirectory::new();
+    let output_directory = directory.create_directory("out");
+    let source = directory.path.join("histogram.png");
+    let bytes = include_bytes!("corpus/png/v2/accepted/indexed-histogram.png");
+    fs::write(&source, bytes).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_imglean"))
+        .args([
+            "--disable-strategy",
+            "oxipng-libdeflate",
+            "--disable-strategy",
+            "oxipng-zopfli",
+            "--disable-strategy",
+            "pngquant",
+            "--require-strategy",
+            "optipng",
+            "--output",
+        ])
+        .arg(&output_directory)
+        .arg(&source)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    assert!(
+        stdout(&result)
+            .lines()
+            .any(|line| line.contains("optipng") && line.contains(" bytes")),
+        "{}",
+        stdout(&result)
+    );
+    assert_eq!(fs::read(&source).unwrap(), bytes);
+    assert!(output_directory.join("histogram.png").is_file());
+}
+
+#[test]
 fn bundled_jpeg_strategies_run_through_the_controller() {
     let directory = TestDirectory::new();
     let output_directory = directory.create_directory("out");

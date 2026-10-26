@@ -3,7 +3,7 @@
 `optipng` bundles the OptiPNG 7.9.1 optimization engine and is enabled by
 default for PNG input. The native source is pinned in `imglean-codecs`, limited
 to the PNG read path required by ImgLean, and linked with a pinned bundled
-libpng/zlib. It runs only inside the short-lived provider worker.
+libpng 1.6.59 and zlib 1.3.2. It runs only inside the short-lived provider worker.
 
 The wrapper initializes OptiPNG with optimization level 2, preserves the input
 interlace mode, writes only to the private candidate path, and does not request

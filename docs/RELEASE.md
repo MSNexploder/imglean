@@ -32,6 +32,34 @@ NASM used for each image.
 
 ## Build inputs
 
+`ci/native-sources.json` records native source URLs, versions or commits,
+SHA-256 checksums, and licenses. `mise run native:prepare` verifies the archives
+before compilation. The build refuses missing or stale prepared inputs.
+Preparation adapts Jpegli's CMake date definitions for the Windows resource
+compiler and its expected libjpeg-turbo header locations. It never runs from
+the CLI. The Debian 13 builder supplies Python's safe archive extraction API.
+
+The private `imglean-avif` crate retains only decoding to RGBA, fixed-policy
+AOM optimization, and grayscale corpus generation from libavif-rs 0.14.0.
+Jpegli's adapter retains only the in-memory path from jpegli 0.1.0. Both retain
+upstream copyright notices. Their native declarations include only the used
+functions and required layouts. Pointees that are never accessed remain opaque.
+
+Regenerate the checked-in declarations with bindgen-cli 0.73.2 after preparing
+and building the native inputs:
+
+```sh
+mise exec cargo:bindgen-cli@0.73.2 -- python tools/generate_native_bindings.py \
+  --jpegli-include target/debug/build/imglean-codecs-<id>/out/jpegli/build/lib/include/jpegli
+mise run format
+```
+
+Use the generated include directory from the current pinned CMake build.
+The generator records Jpegli's platform-dependent `boolean` representation
+from its `jconfig.h.in`; native CI must execute the adapters on every target.
+Release inventories, SBOMs, and notices record native inputs and adapted Rust
+wrapper portions separately from Cargo dependencies.
+
 At release start, the exact stable Rust toolchain configured in `mise.toml` is
 used for all release builds. Each artifact records:
 

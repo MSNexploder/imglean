@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -15,6 +16,8 @@ import urllib.request
 import zipfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
+
+from prepare_native import SOURCES, prepare
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,7 +28,7 @@ PNGQUANT_SHA256 = {
     "3.0.2": "33f8501d8b81f34cb6f028a5d06772b9d7940e0bc2b15a5d0bce138cb74233cb",
     "3.0.3": "68a12bdd8825f9989f4ee9a6ab0b42727dae57728b939ef63453366697a07232",
 }
-PNGQUANT_RGB_VERSION = "0.8.52"
+PNGQUANT_RGB_VERSION = "0.8.53"
 PNGQUANT_BYTEMUCK_VERSION = "1.25.2"
 
 
@@ -290,31 +293,8 @@ def build_jpegli(directory: Path, binary: Path, jpeg_prefix: Path | None) -> Non
     directory.mkdir(parents=True)
     source = directory / "source"
     build = source / "build"
-    clone("https://github.com/google/jpegli.git", "ci/jpegli-revision.txt", source, submodules=True)
-    old_policy = "cmake_policy(SET CMP0111 OLD)"
-    replace_exact(
-        source / "third_party/highway/CMakeLists.txt",
-        old_policy,
-        "cmake_policy(SET CMP0111 NEW)",
-        "Highway CMP0111 policy declaration",
-    )
-    reproducible_definitions = '''  add_definitions(
-    # Avoid changing the binary based on the current time and date.
-    -D__DATE__="redacted"
-    -D__TIMESTAMP__="redacted"
-    -D__TIME__="redacted"
-  )'''
-    replace_exact(
-        source / "CMakeLists.txt",
-        reproducible_definitions,
-        '''  add_compile_definitions(
-    # Resource compilers do not accept the C/C++ warning control below.
-    "$<$<COMPILE_LANGUAGE:C,CXX>:__DATE__=\\\"redacted\\\">"
-    "$<$<COMPILE_LANGUAGE:C,CXX>:__TIMESTAMP__=\\\"redacted\\\">"
-    "$<$<COMPILE_LANGUAGE:C,CXX>:__TIME__=\\\"redacted\\\">"
-  )''',
-        "Jpegli reproducible compiler definitions",
-    )
+    prepare()
+    shutil.copytree(SOURCES / "jpegli", source)
     cmake_configure(
         source,
         build,
@@ -328,6 +308,7 @@ def build_jpegli(directory: Path, binary: Path, jpeg_prefix: Path | None) -> Non
             f"-DJPEG_INCLUDE_DIR={jpeg_prefix / 'include'}",
             f"-DJPEG_LIBRARY={jpeg_library}",
             "-DJPEGLI_BUNDLE_LIBPNG=OFF",
+            "-DJPEGLI_ENABLE_SKCMS=ON",
             "-DJPEGLI_ENABLE_BENCHMARK=OFF",
             "-DJPEGLI_ENABLE_DOXYGEN=OFF",
             "-DJPEGLI_ENABLE_JNI=OFF",

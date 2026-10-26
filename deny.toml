@@ -16,7 +16,7 @@ ignore = [
 ]
 
 [licenses]
-allow = ["0BSD", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "IJG", "Libpng", "MIT", "Unicode-3.0", "Zlib"]
+allow = ["0BSD", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "IJG", "ISC", "Libpng", "MIT", "Unicode-3.0", "Zlib"]
 confidence-threshold = 0.93
 
 [licenses.private]
@@ -27,6 +27,7 @@ multiple-versions = "deny"
 wildcards = "deny"
 highlight = "all"
 skip = [
+  { crate = "miniz_oxide@0.8.9", reason = "png 0.18.1 requires miniz_oxide 0.8 while flate2 1.1.10 requires 0.9; remove when png supports 0.9" },
   { crate = "syn@2.0.119", reason = "rav1e's proc-macro dependencies require syn 2 while thiserror 2 requires syn 3" },
 ]
 

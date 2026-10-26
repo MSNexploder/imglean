@@ -6,10 +6,20 @@
 
 use std::path::Path;
 
-use libpng_sys as _;
+use libz_sys as _;
 
 mod avif_codec;
+#[allow(unsafe_code)]
 mod jpegli_codec;
+#[allow(
+    unsafe_code,
+    clippy::upper_case_acronyms,
+    dead_code,
+    non_camel_case_types,
+    non_snake_case,
+    non_upper_case_globals
+)]
+mod jpegli_ffi;
 mod mozjpeg_codec;
 #[allow(unsafe_code)]
 mod native;

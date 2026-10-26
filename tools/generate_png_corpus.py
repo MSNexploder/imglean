@@ -102,6 +102,11 @@ def main() -> None:
         "indexed-transparency.png",
         png(1, 1, 1, 3, b"\x00\x80", palette=palette2, after_palette=((b"tRNS", b"\x00\xff"),)),
     )
+    write(
+        "accepted", "indexed-histogram.png",
+        png(1, 1, 1, 3, b"\x00\x80", palette=palette2,
+            after_palette=((b"hIST", struct.pack(">HH", 0, 1)),)),
+    )
     write("accepted", "compressed-text.png", png(1, 1, 8, 0, b"\x00\x2a", before=((b"zTXt", b"Note\x00\x00" + zlib.compress(b"opaque")),)))
     write("accepted", "international-text.png", png(1, 1, 8, 0, b"\x00\x2a", before=((b"iTXt", b"Note\x00\x00\x00\x00\x00opaque"),)))
     write("accepted", "icc-profile.png", png(1, 1, 8, 0, b"\x00\x2a", before=((b"iCCP", b"Profile\x00\x00" + zlib.compress(b"opaque profile")),)))

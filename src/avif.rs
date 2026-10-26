@@ -64,7 +64,8 @@ fn validate(bytes: &[u8], maximum_encoded_bytes: u64) -> Result<ValidatedAvif, V
         return failure("AVIF exceeds the encoded-byte limit");
     }
     inspect_container(bytes, started)?;
-    let decoded = libavif::decode_rgb(bytes).map_err(|_| error("AVIF image data is invalid"))?;
+    let decoded =
+        imglean_avif::decode_rgb(bytes).map_err(|_| error("AVIF image data is invalid"))?;
     let (width, height) = (decoded.width(), decoded.height());
     validate_dimensions(width, height)?;
     if decoded.as_slice().len() > MAX_RECONSTRUCTED_BYTES {

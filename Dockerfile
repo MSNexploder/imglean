@@ -1,10 +1,10 @@
-ARG RUST_IMAGE=rust:1.98.0-bookworm
+ARG RUST_IMAGE=rust:1.98.0-trixie
 FROM ${RUST_IMAGE} AS build
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends clang cmake nasm ninja-build \
+    && apt-get install --yes --no-install-recommends clang cmake nasm ninja-build python3 \
     && { \
-        dpkg-query --show --showformat='${Package}\t${Version}\n' clang cmake nasm ninja-build; \
+        dpkg-query --show --showformat='${Package}\t${Version}\n' clang cmake nasm ninja-build python3; \
         cc --version; \
         c++ --version; \
         ld --version; \
@@ -16,7 +16,8 @@ RUN apt-get update \
 
 WORKDIR /source
 COPY . .
-RUN cargo build --locked --release \
+RUN python3 tools/prepare_native.py \
+    && cargo build --locked --release \
     && strip target/release/imglean
 
 FROM gcr.io/distroless/cc-debian13:nonroot@sha256:a77defd6fedbb3392b175ba8ea3d1c22be963c1597c248c3ba987ddd80bfb512

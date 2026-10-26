@@ -1,0 +1,44 @@
+[
+  {
+    "name": "libpng", "version": "1.6.59", "path": "libpng",
+    "url": "https://downloads.sourceforge.net/project/libpng/libpng16/1.6.59/libpng-1.6.59.tar.gz",
+    "sha256": "86a3e4b501f7f50e392c4e456ea158893e9a595b1c63eb88c7bb9f6cf8772dad",
+    "license": "Libpng", "license_file": "LICENSE"
+  },
+  {
+    "name": "libavif", "version": "1.4.2", "path": "libavif",
+    "url": "https://codeload.github.com/AOMediaCodec/libavif/tar.gz/c5240fc79fe5c2407e10afd35f5505ef6333ea49",
+    "sha256": "5e9aa73e43af8021a57d744712ee0bc145267863afb7c9b118723a15dbd4cfbf",
+    "license": "BSD-2-Clause", "license_file": "LICENSE"
+  },
+  {
+    "name": "libaom", "version": "3.15.2", "path": "libaom",
+    "url": "https://storage.googleapis.com/aom-releases/libaom-3.15.2.tar.gz",
+    "sha256": "67bb54b245f33ed98600e08269e6139986e48114e14042474ddd8885801dfddc",
+    "license": "BSD-2-Clause AND BSD-3-Clause AND MIT AND ISC", "license_file": "LICENSE"
+  },
+  {
+    "name": "jpegli", "version": "031a0077f5799a6041004267fc12b956c1f52a20", "path": "jpegli",
+    "url": "https://codeload.github.com/google/jpegli/tar.gz/031a0077f5799a6041004267fc12b956c1f52a20",
+    "sha256": "269b3a75d6b2da2351f7fb2d642043f60f9b6d1bd5839f20c0d7c569be073367",
+    "license": "BSD-3-Clause", "license_file": "LICENSE"
+  },
+  {
+    "name": "highway", "version": "1.4.0", "path": "jpegli/third_party/highway",
+    "url": "https://codeload.github.com/google/highway/tar.gz/refs/tags/1.4.0",
+    "sha256": "e72241ac9524bb653ae52ced768b508045d4438726a303f10181a38f764a453c",
+    "license": "Apache-2.0", "license_file": "LICENSE"
+  },
+  {
+    "name": "libjpeg-turbo-headers", "version": "3.2.0", "path": "jpegli/third_party/libjpeg-turbo",
+    "url": "https://codeload.github.com/libjpeg-turbo/libjpeg-turbo/tar.gz/c85e6b905bf237038faa936dab160ebfc5da0344",
+    "sha256": "45209a3f315ed6156dac8d7fa451b8be62d83f2daa5581cb6b94ee9f3f82cf6f",
+    "license": "IJG AND BSD-3-Clause AND Zlib", "license_file": "LICENSE.md"
+  },
+  {
+    "name": "skcms", "version": "96d9171c94b937a1b5f0293de7309ac16311b722", "path": "jpegli/third_party/skcms",
+    "url": "https://codeload.github.com/google/skcms/tar.gz/96d9171c94b937a1b5f0293de7309ac16311b722",
+    "sha256": "9bb4b5bba0b7c04f6c2bce9ff713d61e23c9a20c4945161ae16290498ad74627",
+    "license": "BSD-3-Clause", "license_file": "LICENSE"
+  }
+]
