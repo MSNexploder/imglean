@@ -32,7 +32,7 @@ configuration. They add no useful candidate diversity.
 
 `avif-aom` uses libavif with libaom, the reference AV1 implementation.
 libavif provides the production AVIF container API and explicitly supports
-libaom, rav1e, and SVT-AV1 encoder backends. The private `imglean-avif` crate
+libaom, rav1e, and SVT-AV1 encoder backends. The private `imglean-codecs::avif` module
 adapts the operations used from libavif-rs 0.14.0 and builds checksum-pinned
 libavif 1.4.2 and libaom 3.15.2. Exact native sources and adapted Rust portions
 are recorded separately in the release inventory.

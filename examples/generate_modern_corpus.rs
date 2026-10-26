@@ -28,7 +28,7 @@ fn encode_webp(path: &Path, width: u32, height: u32) -> Result<(), Box<dyn std::
 }
 
 fn encode_avif(path: &Path, width: u32, height: u32) -> Result<(), Box<dyn std::error::Error>> {
-    let encoded = imglean_avif::encode_gray(width, height, &pixels(width, height), 72)
+    let encoded = imglean_codecs::avif::encode_gray(width, height, &pixels(width, height), 72)
         .map_err(|()| "could not encode grayscale AVIF corpus image")?;
     fs::write(path, encoded)?;
     Ok(())

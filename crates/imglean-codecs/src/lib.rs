@@ -1,14 +1,24 @@
 #![deny(unsafe_code)]
 #![allow(
     clippy::result_unit_err,
-    reason = "the worker protocol intentionally exposes only provider success or failure"
+    reason = "codec callers intentionally receive only success or failure"
 )]
 
 use std::path::Path;
 
 use libz_sys as _;
 
+#[allow(unsafe_code)]
+pub mod avif;
 mod avif_codec;
+#[allow(
+    unsafe_code,
+    dead_code,
+    non_camel_case_types,
+    non_snake_case,
+    non_upper_case_globals
+)]
+mod avif_ffi;
 #[allow(unsafe_code)]
 mod jpegli_codec;
 #[allow(
@@ -55,7 +65,7 @@ pub fn optimize_image_webp(source: &[u8], strip_metadata: bool) -> Result<Vec<u8
 }
 
 pub fn optimize_avif_aom(source: &[u8], quality: u8) -> Result<Vec<u8>, ()> {
-    avif_codec::optimize_aom(source, quality)
+    avif::optimize_aom(source, quality)
 }
 
 pub fn optimize_avif_rav1e(source: &[u8], quality: u8) -> Result<Vec<u8>, ()> {

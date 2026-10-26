@@ -1,11 +1,8 @@
+use super::avif;
 use ravif::{AlphaColorMode, BitDepth, Encoder as RavifEncoder, Img, RGBA8};
 
-pub fn optimize_aom(source: &[u8], quality: u8) -> Result<Vec<u8>, ()> {
-    imglean_avif::optimize_aom(source, quality)
-}
-
 pub fn optimize_rav1e(source: &[u8], quality: u8) -> Result<Vec<u8>, ()> {
-    let decoded = imglean_avif::decode_rgb(source).map_err(|_| ())?;
+    let decoded = avif::decode_rgb(source).map_err(|_| ())?;
     let width = usize::try_from(decoded.width()).map_err(|_| ())?;
     let height = usize::try_from(decoded.height()).map_err(|_| ())?;
     let pixels = decoded
@@ -37,7 +34,7 @@ mod tests {
     #[test]
     fn every_avif_encoder_produces_a_real_reduction() {
         for candidate in [
-            optimize_aom(REDUCTION_SOURCE, 60).unwrap(),
+            avif::optimize_aom(REDUCTION_SOURCE, 60).unwrap(),
             optimize_rav1e(REDUCTION_SOURCE, 60).unwrap(),
         ] {
             assert!(candidate.len() < REDUCTION_SOURCE.len());
@@ -62,7 +59,7 @@ mod tests {
             .encode_rgba(Img::new(&pixels, 2, 2))
             .unwrap()
             .avif_file;
-        let source_alpha = imglean_avif::decode_rgb(&source)
+        let source_alpha = avif::decode_rgb(&source)
             .unwrap()
             .as_slice()
             .as_chunks::<4>()
@@ -76,10 +73,10 @@ mod tests {
                 .any(|alpha| *alpha != 0 && *alpha != 255)
         );
         for (strategy, candidate) in [
-            ("libaom", optimize_aom(&source, 80).unwrap()),
+            ("libaom", avif::optimize_aom(&source, 80).unwrap()),
             ("rav1e", optimize_rav1e(&source, 80).unwrap()),
         ] {
-            let decoded = imglean_avif::decode_rgb(&candidate).unwrap();
+            let decoded = avif::decode_rgb(&candidate).unwrap();
             assert_eq!((decoded.width(), decoded.height()), (2, 2));
             let candidate_alpha = decoded
                 .as_slice()
