@@ -1,8 +1,7 @@
 # ImgLean Scope
 
-> **Status:** ImgLean 0.6 is the complete first version in source.
-> Version 0.6.1 adds a static ARM64 Linux archive to the qualified native
-> release targets.
+> **Status:** ImgLean 0.7 updates bundled codecs, dependencies, and build tools
+> while retaining the existing product boundary and release targets.
 
 This document is the authoritative product boundary: what ImgLean is, what it
 promises, and what it intentionally does not do.
@@ -57,9 +56,9 @@ metadata safety gates. ImgLean trusts audited strategy configuration for
 lossless or lossy transformation behavior; it does not independently compare
 decoded pixels, ancillary payload identity, or perceptual quality.
 
-## Version 0.6
+## Version 0.7
 
-Version 0.6 provides:
+Version 0.7 provides:
 
 - explicit static PNG, JPEG, WebP, and AVIF inputs;
 - separate-output optimization and publication-free `--check` mode;

@@ -1,4 +1,4 @@
-# Version 0.6 Provider Execution Contract
+# Version 0.7 Provider Execution Contract
 
 ## Registry and controls
 

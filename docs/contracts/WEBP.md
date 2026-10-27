@@ -1,4 +1,4 @@
-# Version 0.6 WebP Contract
+# Version 0.7 WebP Contract
 
 ImgLean accepts bounded static lossy, lossless, simple, and extended WebP files
 with optional alpha, ICC, and Exif data. The `.webp` suffix is a path

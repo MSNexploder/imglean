@@ -1,12 +1,8 @@
-# Version 0.6 Release Contract
-
-> [!IMPORTANT]
-> Version 0.6.1 adds a static ARM64 Linux archive, qualified natively under the
-> gates below.
+# Version 0.7 Release Contract
 
 ## Targets
 
-Version 0.6 release qualification covers these target-specific artifacts:
+Version 0.7 release qualification covers these target-specific artifacts:
 
 - `aarch64-apple-darwin`;
 - `aarch64-unknown-linux-musl`;
@@ -79,7 +75,7 @@ used for all release builds. Each artifact records:
 - system-package versions where applicable; and
 - the source commit.
 
-This record supports audit and reconstruction. Version 0.6 does not promise
+This record supports audit and reconstruction. Version 0.7 does not promise
 bit-for-bit reproducible binaries.
 
 The development configuration currently pins cargo-deny `0.20.2`, cargo-about
@@ -201,7 +197,7 @@ must define a fine-grained
 and checksum source.
 
 `tools/package_release.py` refuses a dirty source tree for normal packaging. It
-also accepts only the five declared version 0.6 targets, requires the declared
+also accepts only the five declared version 0.7 targets, requires the declared
 target to equal the native Rust host, enforces the target runtime contract
 (including static linkage for Linux), and requires the release-binary smoke
 corpus to produce a strict size reduction. It
