@@ -1,4 +1,4 @@
-# Version 0.6 JPEG Contract
+# Version 0.7 JPEG Contract
 
 ImgLean accepts files named with a case-insensitive `.jpg` or `.jpeg` extension
 when their bytes are one bounded, completely decodable JPEG image in the subset

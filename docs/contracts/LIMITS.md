@@ -1,4 +1,4 @@
-# Version 0.6 Resource Limits
+# Version 0.7 Resource Limits
 
 This contract records limits version `v9`. `src/limits.rs` is authoritative;
 changing a value requires a limits-version and boundary-test review.

@@ -1,4 +1,4 @@
-# Version 0.6 AVIF Contract
+# Version 0.7 AVIF Contract
 
 ImgLean accepts bounded static AVIF files that libavif can fully decode to
 RGBA. The `.avif` suffix is a path requirement, not format evidence. The

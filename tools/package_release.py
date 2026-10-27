@@ -38,7 +38,7 @@ def main() -> int:
     parser.add_argument("--allow-dirty", action="store_true")
     args = parser.parse_args()
     if args.target not in RELEASE_TARGETS:
-        parser.error(f"unsupported version 0.6 release target: {args.target}")
+        parser.error(f"unsupported version 0.7 release target: {args.target}")
 
     required = [
         args.binary,

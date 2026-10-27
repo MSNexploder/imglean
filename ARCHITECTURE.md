@@ -1,6 +1,6 @@
 # ImgLean Architecture
 
-This document describes the stable system shape of version 0.6. Exact format,
+This document describes the stable system shape of version 0.7. Exact format,
 provider, filesystem, and resource behavior belongs to the
 [focused contracts](docs/contracts/).
 

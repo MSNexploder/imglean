@@ -42,7 +42,7 @@ The Linux archives are self-contained static executables.
 The minimal container supports `linux/amd64` and `linux/arm64`:
 
 ```sh
-docker pull ghcr.io/msnexploder/imglean:v0.6.1
+docker pull ghcr.io/msnexploder/imglean:v0.7.0
 ```
 
 ## Use
