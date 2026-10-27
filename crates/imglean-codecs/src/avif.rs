@@ -52,7 +52,7 @@ pub fn decode_rgb(source: &[u8]) -> Result<RgbaImage, ()> {
 }
 
 /// Re-encode the decoded YUV image, retaining its native metadata and color data.
-pub fn optimize_aom(source: &[u8], quality: u8) -> Result<Vec<u8>, ()> {
+pub(super) fn optimize_aom(source: &[u8], quality: u8) -> Result<Vec<u8>, ()> {
     encode(&decode(source)?, quality)
 }
 

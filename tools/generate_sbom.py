@@ -86,17 +86,18 @@ def main() -> int:
             },
         ]
     )
+    cargo_ids = {package["name"]: package["SPDXID"] for package in document["packages"]}
     document["relationships"].extend(
         [
             {
                 "relatedSpdxElement": f"SPDXRef-Package-libwebp-{LIBWEBP_VERSION}",
                 "relationshipType": "DEPENDS_ON",
-                "spdxElementId": "SPDXRef-Package-libwebp-sys-0.14.4",
+                "spdxElementId": cargo_ids["libwebp-sys"],
             },
             {
                 "relatedSpdxElement": f"SPDXRef-Package-optipng-{OPTIPNG_VERSION}",
                 "relationshipType": "DEPENDS_ON",
-                "spdxElementId": "SPDXRef-Package-imglean-codecs-0.1.0",
+                "spdxElementId": cargo_ids["imglean-codecs"],
             },
             {
                 "relatedSpdxElement": "SPDXRef-Package-cexcept-2.99-optipng",
@@ -105,7 +106,6 @@ def main() -> int:
             },
         ]
     )
-    cargo_ids = {package["name"]: package["SPDXID"] for package in document["packages"]}
     sources = json.loads(MANIFEST.read_text())
     native_ids = {source["name"]: f"SPDXRef-Native-{source['name']}" for source in sources}
     for source in sources:

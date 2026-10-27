@@ -2,7 +2,7 @@ use super::avif;
 use ravif::{AlphaColorMode, BitDepth, Encoder as RavifEncoder, Img, RGBA8};
 
 pub fn optimize_rav1e(source: &[u8], quality: u8) -> Result<Vec<u8>, ()> {
-    let decoded = avif::decode_rgb(source).map_err(|_| ())?;
+    let decoded = avif::decode_rgb(source)?;
     let width = usize::try_from(decoded.width()).map_err(|_| ())?;
     let height = usize::try_from(decoded.height()).map_err(|_| ())?;
     let pixels = decoded
